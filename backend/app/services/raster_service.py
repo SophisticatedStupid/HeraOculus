@@ -14,6 +14,7 @@ import numpy as np
 import rasterio
 import requests
 from PIL import Image
+from pyproj import CRS as pyCRS, Geod
 from rasterio.warp import Resampling, reproject
 from scipy.ndimage import uniform_filter
 from skimage.filters import threshold_otsu
@@ -46,6 +47,77 @@ def _read_raster_bytes(raw_bytes: bytes, filename: str) -> tuple[np.ndarray, dic
             pass
 
 
+def _crs_equivalent(crs1, crs2) -> bool:
+    """Check if two CRS definitions are equivalent."""
+    if crs1 is None or crs2 is None:
+        return False
+    try:
+        return crs1.to_epsg() == crs2.to_epsg()
+    except Exception:
+        try:
+            return crs1.to_wkt() == crs2.to_wkt()
+        except Exception:
+            return False
+
+
+def _validate_alignment(ref_arr: np.ndarray, ref_meta: dict, src_arr: np.ndarray, src_meta: dict) -> bool:
+    """Validate that two rasters have identical dimensions and affine transform."""
+    return (
+        ref_arr.shape == src_arr.shape
+        and ref_meta.get("transform") == src_meta.get("transform")
+    )
+
+
+def _reproject_to_grid(
+    src_arr: np.ndarray,
+    src_meta: dict,
+    dst_shape: tuple[int, int],
+    dst_transform,
+    dst_crs,
+    *,
+    is_categorical: bool,
+) -> np.ndarray:
+    """Reproject source raster to exact destination grid, preserving NaN nodata."""
+    dst = np.full(dst_shape, np.nan, dtype=float)
+    resampling = Resampling.nearest if is_categorical else Resampling.bilinear
+    reproject(
+        source=src_arr,
+        destination=dst,
+        src_transform=src_meta["transform"],
+        src_crs=src_meta["crs"],
+        dst_transform=dst_transform,
+        dst_crs=dst_crs,
+        resampling=resampling,
+        src_nodata=np.nan,
+        dst_nodata=np.nan,
+    )
+    return dst
+
+
+def _pixel_grid_resize(
+    ref_arr: np.ndarray,
+    src_arr: np.ndarray,
+    *,
+    is_categorical: bool,
+) -> np.ndarray:
+    """Resize source array to reference shape using PIL (pixel-grid-only mode).
+    
+    WARNING: This ignores georeferencing. Only use when both rasters lack CRS
+    and you explicitly accept pixel-grid comparison.
+    """
+    warnings.warn(
+        "Pixel-grid-only alignment: ignoring georeferencing. "
+        "Use only for non-georeferenced rasters with identical spatial extent.",
+        UserWarning,
+        stacklevel=2,
+    )
+    from PIL import Image
+    mode = Image.Resampling.NEAREST if is_categorical else Image.Resampling.BILINEAR
+    img = Image.fromarray(np.nan_to_num(src_arr, nan=0.0).astype(np.float32))
+    resized = img.resize((ref_arr.shape[1], ref_arr.shape[0]), mode)
+    return np.asarray(resized, dtype=float)
+
+
 def _align_second_raster(
     ref_arr: np.ndarray,
     ref_meta: dict,
@@ -53,32 +125,178 @@ def _align_second_raster(
     src_meta: dict,
     *,
     is_categorical: bool = False,
+    pixel_grid_only: bool = False,
 ) -> np.ndarray:
-    """Reproject or resample second raster to match first raster's exact grid."""
-    if ref_arr.shape == src_arr.shape and ref_meta.get("transform") == src_meta.get("transform"):
-        return src_arr
+    """Reproject or resample second raster to match first raster's exact grid.
 
-    if ref_meta.get("crs") is not None and src_meta.get("crs") is not None:
-        dst = np.full(ref_arr.shape, np.nan, dtype=float)
-        resampling = Resampling.nearest if is_categorical else Resampling.bilinear
-        reproject(
-            source=src_arr,
-            destination=dst,
-            src_transform=src_meta["transform"],
-            src_crs=src_meta["crs"],
-            dst_transform=ref_meta["transform"],
-            dst_crs=ref_meta["crs"],
-            resampling=resampling,
-            src_nodata=np.nan,
-            dst_nodata=np.nan,
+    Args:
+        ref_arr: Reference raster array
+        ref_meta: Reference raster metadata (crs, transform, width, height, res)
+        src_arr: Source raster array to align
+        src_meta: Source raster metadata
+        is_categorical: Use nearest-neighbor for categorical (LULC), bilinear for continuous
+        pixel_grid_only: If True, allow pixel-grid resize when CRS missing. Default False.
+
+    Returns:
+        Aligned array matching ref_arr shape and grid.
+
+    Raises:
+        ValueError: If CRS mismatch and pixel_grid_only=False, or if one has CRS and other doesn't.
+    """
+    ref_crs = ref_meta.get("crs")
+    src_crs = src_meta.get("crs")
+    grids_match = _validate_alignment(ref_arr, ref_meta, src_arr, src_meta)
+
+    # Fast path: identical grid AND equivalent CRS -> copy unchanged.
+    if grids_match and ref_crs is not None and src_crs is not None and _crs_equivalent(ref_crs, src_crs):
+        return src_arr.copy()
+
+    # Both have CRS: reproject onto reference grid (covers same-CRS-different-grid
+    # and different-CRS cases).
+    if ref_crs is not None and src_crs is not None:
+        return _reproject_to_grid(
+            src_arr, src_meta,
+            ref_arr.shape, ref_meta["transform"], ref_crs,
+            is_categorical=is_categorical,
         )
-        return dst
 
-    # Unprojected GeoTIFF / pixel-grid fallback: resize cleanly with PIL
-    mode = Image.Resampling.NEAREST if is_categorical else Image.Resampling.BILINEAR
-    img = Image.fromarray(np.nan_to_num(src_arr, nan=0.0).astype(np.float32))
-    resized = img.resize((ref_arr.shape[1], ref_arr.shape[0]), mode)
-    return np.asarray(resized, dtype=float)
+    # One has CRS, the other does not: reject (never mix georeferenced with raw).
+    if (ref_crs is None) != (src_crs is None):
+        raise ValueError(
+            "CRS mismatch: one raster has a coordinate reference system and the other does not. "
+            "Both rasters must either have identical CRS definitions or both lack CRS metadata. "
+            "Use pixel_grid_only=True only if you explicitly accept non-georeferenced comparison."
+        )
+
+    # Neither has CRS: do not silently assume geographic compatibility.
+    if pixel_grid_only:
+        if not grids_match:
+            return _pixel_grid_resize(ref_arr, src_arr, is_categorical=is_categorical)
+        return src_arr.copy()
+
+    raise ValueError(
+        "Both rasters lack CRS metadata. Georeferenced comparison requires CRS. "
+        "Provide GeoTIFFs with valid CRS, or set pixel_grid_only=True for pixel-grid-only mode "
+        "(not recommended for scientific analysis)."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Pixel-area & physical-unit helpers
+# ---------------------------------------------------------------------------
+
+def _as_pyproj_crs(crs):
+    """Coerce a rasterio CRS (or other) into a pyproj CRS for linear-unit queries."""
+    if crs is None:
+        return None
+    try:
+        return pyCRS(crs) if hasattr(crs, "to_wkt") else pyCRS.from_user_input(crs)
+    except Exception:
+        return None
+
+
+def _get_crs_linear_units_to_meters(crs) -> float:
+    """Linear unit conversion factor (metres per CRS unit) for a projected CRS."""
+    if crs is None:
+        raise ValueError("CRS is required for linear-unit conversion.")
+    pcrs = _as_pyproj_crs(crs)
+    try:
+        factor = float(pcrs.axis_info[0].unit_conversion_factor)
+        if np.isfinite(factor) and factor > 0:
+            return factor
+    except Exception:
+        pass
+    return 1.0
+
+
+def _determine_area_kind(crs) -> str:
+    """Classify CRS for pixel-area methodology. Returns 'geographic' or 'projected'."""
+    if crs is None:
+        raise ValueError("CRS is required to determine pixel-area methodology.")
+    pcrs = _as_pyproj_crs(crs)
+    try:
+        return "geographic" if pcrs.is_geographic else "projected"
+    except Exception:
+        return "projected"
+
+
+def _compute_pixel_areas(
+    arr: np.ndarray,
+    transform,
+    crs,
+    *,
+    area_kind: str,
+) -> np.ndarray:
+    """Compute per-pixel areas in square metres.
+
+    Projected CRS: area = |a*e - b*d| * (unit_to_m)^2 (constant across grid; handles
+    non-square pixels and rotated affine transforms).
+
+    Geographic CRS: per-cell geodesic polygon area (latitude-dependent).
+
+    Returns a float array of shape ``arr.shape`` with areas in m^2.
+    """
+    n_rows, n_cols = arr.shape
+    a, b, c, d, e, f = (
+        transform.a, transform.b, transform.c,
+        transform.d, transform.e, transform.f,
+    )
+
+    if area_kind == "geographic":
+        geod = Geod(ellps="WGS84")
+        areas = np.zeros((n_rows, n_cols), dtype=float)
+        for r in range(n_rows):
+            for cc in range(n_cols):
+                lons = np.array([
+                    a * cc + b * r + c,
+                    a * (cc + 1) + b * r + c,
+                    a * (cc + 1) + b * (r + 1) + c,
+                    a * cc + b * (r + 1) + c,
+                ])
+                lats = np.array([
+                    d * cc + e * r + f,
+                    d * (cc + 1) + e * r + f,
+                    d * (cc + 1) + e * (r + 1) + f,
+                    d * cc + e * (r + 1) + f,
+                ])
+                area, _ = geod.polygon_area_perimeter(lons.tolist(), lats.tolist())
+                areas[r, cc] = abs(area)
+        return areas
+
+    # projected CRS: constant area across grid
+    det = abs(a * e - b * d)
+    unit_factor = _get_crs_linear_units_to_meters(crs)
+    if not np.isfinite(unit_factor) or unit_factor <= 0:
+        raise ValueError(
+            f"Unsupported or ambiguous CRS linear unit definition for {crs}. "
+            "Cannot convert CRS units to metres."
+        )
+    return np.full((n_rows, n_cols), det * (unit_factor ** 2), dtype=float)
+
+
+def _pixel_area_metadata(crs, areas: np.ndarray) -> dict:
+    """Explicit metadata describing the pixel-area methodology and units."""
+    if crs is None:
+        return {
+            "methodology": "synthetic_demo_constant_square_pixel",
+            "area_units": "m2",
+            "crs": None,
+            "linear_units": None,
+            "area_constant": True,
+        }
+    kind = _determine_area_kind(crs)
+    unit_factor = _get_crs_linear_units_to_meters(crs) if kind == "projected" else None
+    return {
+        "methodology": "geodesic_per_cell" if kind == "geographic" else "affine_determinant",
+        "area_units": "m2",
+        "crs": str(crs),
+        "linear_units": (
+            "metre" if unit_factor is not None and abs(unit_factor - 1.0) < 1e-9
+            else f"{unit_factor} m per CRS unit" if unit_factor is not None
+            else None
+        ),
+        "area_constant": bool(areas.size > 0 and np.allclose(areas, areas.flat[0])),
+    }
 
 
 def _encode_png(rgba: np.ndarray, target_size: tuple[int, int] = (360, 280)) -> str:
@@ -168,9 +386,18 @@ def compute_dem_differencing(
     scenario: str = "mount_st_helens_lahar",
     lod_threshold_m: float = 0.75,
     pixel_size_m: float = 10.0,
+    pixel_areas_m2: Optional[np.ndarray] = None,
+    pixel_area_meta: Optional[dict] = None,
     is_upload: bool = False,
 ) -> dict:
-    """Compute DEM of Difference (DoD) with Level-of-Detection & sediment/ice volume budget."""
+    """Compute DEM of Difference (DoD) with Level-of-Detection & sediment/ice volume budget.
+
+    For user-uploaded GeoTIFFs, per-pixel areas in m² may be supplied via ``pixel_areas_m2``;
+    otherwise a constant square-pixel assumption of ``pixel_size_m`` (metres) is used.
+
+    If ``pixel_areas_m2`` is supplied, volume calculations use per-pixel areas (so non-square
+    / rotated grids are handled). Otherwise each pixel is assumed to have area ``pixel_size_m**2``.
+    """
     if dem_before is not None and dem_after is not None:
         z1, z2 = dem_before, dem_after
         label = "Uploaded GeoTIFF DEM Pair"
@@ -183,37 +410,64 @@ def compute_dem_differencing(
 
     dod = z2 - z1
     valid = np.isfinite(dod)
-    pixel_area_m2 = pixel_size_m * pixel_size_m
 
-    significant = valid & (np.abs(dod) >= lod_threshold_m)
-    deposition_mask = significant & (dod > 0)
-    erosion_mask = significant & (dod < 0)
+    if pixel_areas_m2 is not None:
+        areas_m2 = pixel_areas_m2
+        assert areas_m2.shape == z1.shape, f"pixel_areas_m2 shape {areas_m2.shape} != DEM shape {z1.shape}"
+    else:
+        areas_m2 = np.full(z1.shape, pixel_size_m ** 2, dtype=float)
 
-    dep_vol_m3 = float(np.sum(dod[deposition_mask]) * pixel_area_m2) if np.any(deposition_mask) else 0.0
-    ero_vol_m3 = float(np.sum(np.abs(dod[erosion_mask])) * pixel_area_m2) if np.any(erosion_mask) else 0.0
+    if pixel_area_meta is None:
+        # No explicit metadata: describe the assumed constant square-pixel geometry.
+        pixel_area_meta = {
+            "methodology": (
+                "synthetic_demo_constant_square_pixel" if tier == "synthetic_demo"
+                else "constant_square_pixel_assumed"
+            ),
+            "area_units": "m2",
+            "crs": None,
+            "linear_units": None,
+            "area_constant": True,
+        }
+
+    sig = valid & (np.abs(dod) >= lod_threshold_m)
+    deposition_mask = sig & (dod > 0)
+    erosion_mask = sig & (dod < 0)
+
+    dep_vol_m3 = float(np.sum(dod[deposition_mask] * areas_m2[deposition_mask])) if np.any(deposition_mask) else 0.0
+    ero_vol_m3 = float(np.sum(np.abs(dod[erosion_mask]) * areas_m2[erosion_mask])) if np.any(erosion_mask) else 0.0
     net_vol_m3 = dep_vol_m3 - ero_vol_m3
 
     sig_class = np.where(deposition_mask, 1.0, np.where(erosion_mask, -1.0, 0.0))
     dod_valid = dod[valid]
     hist_counts, hist_edges = np.histogram(dod_valid, bins=24)
 
+    # Assemble provenance metadata
+    provenance = {
+        "tier": tier,
+        "source_name": label,
+        "dataset_id": scenario.upper() if not is_upload else "USER_DEM_PAIR",
+        "is_live": False,
+        "status_message": msg,
+    }
+    if pixel_area_meta is not None:
+        provenance["pixel_area_meta"] = pixel_area_meta
+
     return {
-        "provenance": {
-            "tier": tier,
-            "source_name": label,
-            "dataset_id": scenario.upper() if not is_upload else "USER_DEM_PAIR",
-            "is_live": False,
-            "status_message": msg,
-        },
+        "provenance": provenance,
         "label": label,
-        "dimensions": {"rows": int(dod.shape[0]), "cols": int(dod.shape[1]), "pixel_size_m": pixel_size_m},
+        "dimensions": {
+            "rows": int(dod.shape[0]),
+            "cols": int(dod.shape[1]),
+            "pixel_size_m": float(np.sqrt(areas_m2[0, 0])) if areas_m2.size else pixel_size_m,
+        },
         "lod_threshold_m": lod_threshold_m,
         "summary": {
             "mean_elevation_change_m": round(float(np.mean(dod_valid)), 3),
             "median_change_m": round(float(np.median(dod_valid)), 3),
             "max_deposition_m": round(float(np.max(dod_valid)), 3),
             "max_erosion_m": round(float(np.min(dod_valid)), 3),
-            "pct_area_changed": round(100.0 * float(np.sum(significant)) / max(1, int(np.sum(valid))), 2),
+            "pct_area_changed": round(100.0 * float(np.sum(sig)) / max(1, int(np.sum(valid))), 2),
             "deposition_volume_m3": round(dep_vol_m3, 1),
             "erosion_volume_m3": round(ero_vol_m3, 1),
             "net_volume_change_m3": round(net_vol_m3, 1),
@@ -238,16 +492,20 @@ def compute_dem_differencing_from_files(
     after_name: str,
     *,
     lod_threshold_m: float = 0.75,
+    pixel_grid_only: bool = False,
 ) -> dict:
     z1, m1 = _read_raster_bytes(before_bytes, before_name)
     z2_raw, m2 = _read_raster_bytes(after_bytes, after_name)
-    z2 = _align_second_raster(z1, m1, z2_raw, m2, is_categorical=False)
-    res_x = abs(m1["res"][0]) if m1.get("res") and 0.5 <= abs(m1["res"][0]) <= 2000 else 10.0
+    z2 = _align_second_raster(z1, m1, z2_raw, m2, is_categorical=False, pixel_grid_only=pixel_grid_only)
+    area_kind = _determine_area_kind(m1.get("crs"))
+    areas_m2 = _compute_pixel_areas(z1, m1.get("transform"), m1.get("crs"), area_kind=area_kind)
+    pixel_area_meta = _pixel_area_metadata(m1.get("crs"), areas_m2)
     return compute_dem_differencing(
         dem_before=z1,
         dem_after=z2,
         lod_threshold_m=lod_threshold_m,
-        pixel_size_m=float(res_x),
+        pixel_areas_m2=areas_m2,
+        pixel_area_meta=pixel_area_meta,
         is_upload=True,
     )
 
@@ -309,9 +567,15 @@ def compute_sar_change_detection(
     window_size: int = 5,
     threshold_db: float = 3.0,
     pixel_size_m: float = 20.0,
+    pixel_areas_m2: Optional[np.ndarray] = None,
+    pixel_area_meta: Optional[dict] = None,
     is_upload: bool = False,
 ) -> dict:
-    """Compute SAR log-ratio change detection with Lee speckle filtering & Otsu threshold."""
+    """Compute SAR log-ratio change detection with Lee speckle filtering & Otsu threshold.
+
+    For user-uploaded GeoTIFFs, per-pixel areas in m² may be supplied via ``pixel_areas_m2``;
+    otherwise each pixel is assumed to have area ``pixel_size_m**2`` (metres).
+    """
     if img_before is not None and img_after is not None:
         i1, i2 = img_before, img_after
         label = "Uploaded Dual SAR GeoTIFF Backscatter Pair"
@@ -347,31 +611,40 @@ def compute_sar_change_detection(
     changed_gain = log_ratio_db >= threshold_db
     mask_arr = np.where(changed_gain, 1.0, np.where(changed_drop, -1.0, 0.0))
 
-    total_pixels = log_ratio_db.size
-    px_km2 = (pixel_size_m * pixel_size_m) / 1_000_000.0
-    drop_area_km2 = float(np.sum(changed_drop)) * px_km2
-    gain_area_km2 = float(np.sum(changed_gain)) * px_km2
+    if pixel_areas_m2 is not None:
+        areas_m2 = pixel_areas_m2
+        assert areas_m2.shape == i1.shape, f"pixel_areas_m2 shape {areas_m2.shape} != SAR shape {i1.shape}"
+    else:
+        areas_m2 = np.full(i1.shape, pixel_size_m ** 2, dtype=float)
+
+    total_area_km2 = float(np.sum(areas_m2)) / 1_000_000.0
+    drop_area_km2 = float(np.sum(areas_m2[changed_drop])) / 1_000_000.0
+    gain_area_km2 = float(np.sum(areas_m2[changed_gain])) / 1_000_000.0
 
     hist_counts, hist_edges = np.histogram(log_ratio_db.ravel(), bins=24)
 
+    provenance = {
+        "tier": tier,
+        "source_name": label,
+        "dataset_id": scenario.upper() if not is_upload else "USER_SAR_PAIR",
+        "is_live": False,
+        "status_message": msg,
+    }
+    if pixel_area_meta is not None:
+        provenance["pixel_area_meta"] = pixel_area_meta
+
     return {
-        "provenance": {
-            "tier": tier,
-            "source_name": label,
-            "dataset_id": scenario.upper() if not is_upload else "USER_SAR_PAIR",
-            "is_live": False,
-            "status_message": msg,
-        },
+        "provenance": provenance,
         "label": label,
         "speckle_filter": speckle_filter,
         "window_size": window_size,
         "threshold_db": threshold_db,
         "otsu_suggested_threshold_db": round(otsu_db, 3),
         "summary": {
-            "total_area_km2": round(total_pixels * px_km2, 3),
+            "total_area_km2": round(total_area_km2, 3),
             "backscatter_drop_area_km2": round(drop_area_km2, 3),
             "backscatter_gain_area_km2": round(gain_area_km2, 3),
-            "pct_changed": round(100.0 * (np.sum(changed_drop) + np.sum(changed_gain)) / max(1, total_pixels), 2),
+            "pct_changed": round(100.0 * (np.sum(changed_drop) + np.sum(changed_gain)) / max(1, log_ratio_db.size), 2),
             "mean_log_ratio_db": round(float(np.mean(log_ratio_db)), 3),
             "std_log_ratio_db": round(float(np.std(log_ratio_db)), 3),
         },
@@ -397,18 +670,22 @@ def compute_sar_change_from_files(
     speckle_filter: Literal["none", "lee", "mean"] = "lee",
     window_size: int = 5,
     threshold_db: float = 3.0,
+    pixel_grid_only: bool = False,
 ) -> dict:
     i1, m1 = _read_raster_bytes(before_bytes, before_name)
     i2_raw, m2 = _read_raster_bytes(after_bytes, after_name)
-    i2 = _align_second_raster(i1, m1, i2_raw, m2, is_categorical=False)
-    res_x = abs(m1["res"][0]) if m1.get("res") and 0.5 <= abs(m1["res"][0]) <= 2000 else 20.0
+    i2 = _align_second_raster(i1, m1, i2_raw, m2, is_categorical=False, pixel_grid_only=pixel_grid_only)
+    area_kind = _determine_area_kind(m1.get("crs"))
+    areas_m2 = _compute_pixel_areas(i1, m1.get("transform"), m1.get("crs"), area_kind=area_kind)
+    pixel_area_meta = _pixel_area_metadata(m1.get("crs"), areas_m2)
     return compute_sar_change_detection(
         img_before=i1,
         img_after=i2,
         speckle_filter=speckle_filter,
         window_size=window_size,
         threshold_db=threshold_db,
-        pixel_size_m=float(res_x),
+        pixel_areas_m2=areas_m2,
+        pixel_area_meta=pixel_area_meta,
         is_upload=True,
     )
 
@@ -560,9 +837,16 @@ def compute_lulc_transitions(
     lulc_after: Optional[np.ndarray] = None,
     scenario: str = "amazon_arc_deforestation",
     pixel_area_km2: float = 0.25,
+    pixel_areas_m2: Optional[np.ndarray] = None,
+    pixel_area_meta: Optional[dict] = None,
     is_upload: bool = False,
 ) -> dict:
-    """Compute Land Use / Land Cover KxK transition matrix, Cohen's Kappa & net class gains/losses."""
+    """Compute Land Use / Land Cover KxK transition matrix, Cohen's Kappa & net class gains/losses.
+
+    Transition areas are computed from actual per-pixel areas in m^2 (via ``pixel_areas_m2``) when
+    supplied for uploaded rasters; otherwise a constant square-pixel assumption of
+    ``pixel_area_km2`` (km^2 per pixel) is used.
+    """
     if lulc_before is not None and lulc_after is not None:
         t1_raw, t2_raw = lulc_before, lulc_after
         valid = np.isfinite(t1_raw) & np.isfinite(t2_raw)
@@ -589,14 +873,49 @@ def compute_lulc_transitions(
     overall_agreement = float(np.trace(cm) / max(1, total))
     kappa = float(cohen_kappa_score(t1, t2, labels=class_ids))
 
+    if pixel_areas_m2 is not None:
+        areas_m2 = pixel_areas_m2
+        assert areas_m2.shape == map1.shape, f"pixel_areas_m2 shape {areas_m2.shape} != LULC shape {map1.shape}"
+        cell_area_m2 = areas_m2[valid]  # aligned with flat t1/t2
+    else:
+        cell_area_m2 = np.full(len(t1), float(pixel_area_km2) * 1_000_000.0, dtype=float)
+
+    # Per-class before/after area (m^2) and net change (m^2 -> km^2)
+    class_area_m2 = {}
+    class_before_m2 = {}
+    class_after_m2 = {}
+    for i, cid in enumerate(class_ids):
+        before_mask = (t1 == cid) if len(t1) == len(map1.ravel()) else None
+        # Using flat valid arrays
+        before_mask = t1 == cid
+        after_mask = t2 == cid
+        before_m2 = float(np.sum(cell_area_m2[before_mask]))
+        after_m2 = float(np.sum(cell_area_m2[after_mask]))
+        class_before_m2[cid] = before_m2
+        class_after_m2[cid] = after_m2
+        net_m2 = after_m2 - before_m2
+        # store net for summary via class_summary
+        class_area_m2[cid] = net_m2
+
+    # Transition areas (m^2) per (before, after) pair
+    transition_m2 = np.zeros((len(class_ids), len(class_ids)), dtype=float)
+    for i, ci in enumerate(class_ids):
+        for j, cj in enumerate(class_ids):
+            m = (t1 == ci) & (t2 == cj)
+            transition_m2[i, j] = float(np.sum(cell_area_m2[m])) if np.any(m) else 0.0
+
     row_sums = np.sum(cm, axis=1)
     col_sums = np.sum(cm, axis=0)
+
     class_summary = []
     for i, cid in enumerate(class_ids):
         before_px = int(row_sums[i])
         after_px = int(col_sums[i])
         persisted_px = int(cm[i, i])
         net_px = after_px - before_px
+        before_m2 = class_before_m2[cid]
+        after_m2 = class_after_m2[cid]
+        net_m2 = class_area_m2[cid]
         class_summary.append(
             {
                 "class_id": cid,
@@ -604,21 +923,25 @@ def compute_lulc_transitions(
                 "before_pct": round(100.0 * before_px / max(1, total), 2),
                 "after_pct": round(100.0 * after_px / max(1, total), 2),
                 "net_change_pct_pts": round(100.0 * net_px / max(1, total), 2),
-                "net_area_km2": round(net_px * pixel_area_km2, 2),
+                "net_area_km2": round(net_m2 / 1_000_000.0, 2),
                 "persistence_pct": round(100.0 * persisted_px / max(1, before_px), 2),
             }
         )
 
     change_map = np.where(map1 != map2, -1.0, 0.0)
 
+    provenance = {
+        "tier": tier,
+        "source_name": label,
+        "dataset_id": scenario.upper() if not is_upload else "USER_LULC_PAIR",
+        "is_live": False,
+        "status_message": msg,
+    }
+    if pixel_area_meta is not None:
+        provenance["pixel_area_meta"] = pixel_area_meta
+
     return {
-        "provenance": {
-            "tier": tier,
-            "source_name": label,
-            "dataset_id": scenario.upper() if not is_upload else "USER_LULC_PAIR",
-            "is_live": False,
-            "status_message": msg,
-        },
+        "provenance": provenance,
         "label": label,
         "overall_persistence_pct": round(overall_agreement * 100.0, 2),
         "pct_changed": round((1.0 - overall_agreement) * 100.0, 2),
@@ -627,7 +950,9 @@ def compute_lulc_transitions(
         "transition_matrix": {
             "labels": [LULC_CLASS_LABELS.get(c, f"Class {c}") for c in class_ids],
             "counts": cm.tolist(),
-            "area_km2": [[round(float(val * pixel_area_km2), 2) for val in row] for row in cm],
+            "area_km2": [
+                [round(float(transition_m2[i, j]) / 1_000_000.0, 2) for j in range(len(class_ids))] for i in range(len(class_ids))
+            ],
         },
         "images": {
             "before_png": _render_categorical_png(map1, class_ids),
@@ -642,15 +967,19 @@ def compute_lulc_from_files(
     before_name: str,
     after_bytes: bytes,
     after_name: str,
+    *,
+    pixel_grid_only: bool = False,
 ) -> dict:
     t1, m1 = _read_raster_bytes(before_bytes, before_name)
     t2_raw, m2 = _read_raster_bytes(after_bytes, after_name)
-    t2 = _align_second_raster(t1, m1, t2_raw, m2, is_categorical=True)
-    res_x = abs(m1["res"][0]) if m1.get("res") and 1.0 <= abs(m1["res"][0]) <= 2000 else 500.0
-    px_km2 = (res_x * res_x) / 1_000_000.0
+    t2 = _align_second_raster(t1, m1, t2_raw, m2, is_categorical=True, pixel_grid_only=pixel_grid_only)
+    area_kind = _determine_area_kind(m1.get("crs"))
+    areas_m2 = _compute_pixel_areas(t1, m1.get("transform"), m1.get("crs"), area_kind=area_kind)
+    pixel_area_meta = _pixel_area_metadata(m1.get("crs"), areas_m2)
     return compute_lulc_transitions(
         lulc_before=t1,
         lulc_after=t2,
-        pixel_area_km2=float(px_km2),
+        pixel_areas_m2=areas_m2,
+        pixel_area_meta=pixel_area_meta,
         is_upload=True,
     )

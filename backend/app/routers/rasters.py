@@ -38,12 +38,13 @@ async def dem_diff_upload(
     before_file: UploadFile = File(...),
     after_file: UploadFile = File(...),
     lod_threshold_m: float = Form(default=0.75),
+    pixel_grid_only: bool = Form(default=False),
 ) -> dict:
     b1, n1 = await read_checked_upload(before_file)
     b2, n2 = await read_checked_upload(after_file)
     try:
         return compute_dem_differencing_from_files(
-            b1, n1, b2, n2, lod_threshold_m=lod_threshold_m
+            b1, n1, b2, n2, lod_threshold_m=lod_threshold_m, pixel_grid_only=pixel_grid_only
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Failed to compute DEM DoD: {exc}") from exc
@@ -67,6 +68,7 @@ async def sar_change_upload(
     speckle_filter: str = Form(default="lee"),
     window_size: int = Form(default=5),
     threshold_db: float = Form(default=3.0),
+    pixel_grid_only: bool = Form(default=False),
 ) -> dict:
     b1, n1 = await read_checked_upload(before_file)
     b2, n2 = await read_checked_upload(after_file)
@@ -80,6 +82,7 @@ async def sar_change_upload(
             speckle_filter=filt,  # type: ignore[arg-type]
             window_size=window_size,
             threshold_db=threshold_db,
+            pixel_grid_only=pixel_grid_only,
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Failed to compute SAR change: {exc}") from exc
@@ -107,10 +110,11 @@ def lulc_preset(payload: LulcPresetRequest) -> dict:
 async def lulc_upload(
     before_file: UploadFile = File(...),
     after_file: UploadFile = File(...),
+    pixel_grid_only: bool = Form(default=False),
 ) -> dict:
     b1, n1 = await read_checked_upload(before_file)
     b2, n2 = await read_checked_upload(after_file)
     try:
-        return compute_lulc_from_files(b1, n1, b2, n2)
+        return compute_lulc_from_files(b1, n1, b2, n2, pixel_grid_only=pixel_grid_only)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Failed to compute LULC matrix: {exc}") from exc

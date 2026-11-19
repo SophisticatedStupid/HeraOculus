@@ -1,209 +1,250 @@
-# HERAOCULUS | Earth Science Change Detective & Significance Engine
+# HERAOCULUS
 
-(no NASA Space Apps Challenge text)  
+HERAOCULUS (also called Geo-Iris in the source code) is an interactive Earth
+science change-detection and significance platform. It helps students,
+researchers, and citizen scientists explore environmental time series,
+understand their provenance, and distinguish persistent trends from seasonal
+or short-lived variability.
 
+The application has two complementary compute paths:
 
----
+- **Browser compute** for exploration, charts, statistical analysis, custom
+  CSV/JSON data, and the detective learning mode.
+- **FastAPI compute** for larger or specialized workflows such as forecasting,
+  Bayesian inference, extreme-value analysis, gridded spatial FDR, raster
+  change detection, and NetCDF/HDF5 inspection.
 
-## 🌍 Executive Summary
+> **Data and scientific-use note:** Results are exploratory and depend on the
+> selected dataset, preprocessing, missing values, spatial/temporal resolution,
+> and statistical assumptions. Treat demonstration data and fallback results as
+> labeled demonstrations, not as observed measurements.
 
-**GEOIRIS** is an interactive, production-ready Earth science web platform that empowers students, researchers, and citizen scientists to become **"Data Detectives"**. It selects variables measured by NASA Earth science satellites and reanalysis models, visualizes multi-decadal changes over time, removes seasonal noise, and determines **what is changing**, **where it is changing**, **how much it is changing**, and whether those changes meet rigorous scientific standards of **statistical significance**.
+## What it does
 
-### Key Highlights
-- **1. Earth Science Variables & Missions**: Analyzes Surface Air Temperature ($`T_{2m}`$), Precipitation ($`P_{\text{tot}}`$), Vegetation Greenness ($`\text{NDVI}`$), Root-Zone Soil Moisture ($`\text{SM}`$), Evapotranspiration ($`\text{ET}`$), Aerosol Optical Depth ($`\text{AOD}_{550}`$), Land Surface Temperature ($`\text{LST}`$), and Ozone ($`\text{O}_3`$) observed by **MODIS** (Terra/Aqua), **AIRS** (Aqua), **OMI** (Aura), **GPM Core**, **SMAP**, **MERRA-2**, and **GLDAS-2**.
-- **2. Interactive Global Map**: Interactive Leaflet map powered by keyless ArcGIS Online basemaps (Dark Gray Canvas, World Imagery Satellite, and World Topographic Terrain), clickable pins across 12 iconic global biomes, and a **click-to-pin tool** allowing users to query any latitude/longitude coordinate on Earth.
-- **3. Live NASA POWER API Integration**: Direct live queries to NASA Langley Research Center's `https://power.larc.nasa.gov` API, retrieving multi-decade monthly satellite and reanalysis observations on the fly with graceful offline fallback.
-- **4. Deseasonalization & Climatology Normalization**: Removes regular annual cycles by subtracting 30-year monthly baselines ($`A_{y,m} = X_{y,m} - \bar{X}_m`$) to reveal underlying climate trajectories that seasonal swings otherwise conceal.
-- **5. Rigorous Statistical Engine**:
-  - **Mann-Kendall Non-Parametric Trend Test** ($`S`$, $`\text{Var}(S)`$, standard normal $`Z`$, Kendall's Tau $`\tau`$, and two-tailed $`p`$-value).
-  - **Theil-Sen Robust Median Slope Estimator** (resistant to extreme weather outliers).
-  - **Ordinary Least Squares (OLS)** linear regression ($`m`$, intercept, $`R^2`$, standard error).
-  - **Student's t-test** ($`t`$-statistic and $`p`$-value).
-  - **95% Confidence Interval Band** around the trend line.
-- **6. "Opposite Regional Trends" Engine**: Directly addresses the core challenge paradox: *"a measured Earth science data variable can trend one way in one region and the opposite way in another, even when the same process drives both"* (e.g. Clausius-Clapeyron warming causing the wet to get wetter in monsoon zones while the dry subtropics desiccate).
-- **7. "Data Detective" Student Mystery Mode**: 4 interactive gamified mystery dossiers with step-by-step briefings, orbital clues, comprehension questions, and official NASA Data Detective Certification badges.
-- **8. Custom Data Studio & Exporter**: Paste or upload custom CSV/JSON time series from local weather stations, export publication-ready datasets (CSV/JSON), and print/save scientific dossiers.
-- **9. Statistical Analysis Lab (Phase 1 Completed)**:
-  - **Inferential & Regression**: One-sample ($\mu_0$), two-sample, and paired t-tests; One-Way & **Two-Way Factorial ANOVA**; Multiple OLS, Huber/Bisquare IRLS, and **Nonlinear Regression** (exponential, logarithmic, power, quadratic, logistic via bounded Levenberg-Marquardt).
-  - **Multivariate & Time-Series**: PCA with Scree plot, Factor Loadings matrix & PC1/PC2 Score Biplot; Hamed-Rao & **TFPW (Yue et al., 2002)** autocorrelated Mann-Kendall; Trend Acceleration & **Reversal Point $t^*$**; Pettitt & CUSUM change points; **GEV Extreme Value L-Moments fit**; selectable residual diagnostics (Ljung-Box Q & p, Shapiro-Wilk, IQR/Z-Score/Grubbs outlier detection).
-  - **Provenance & Missing Data Fidelity**: Preserves `-999.0` polar-night/satellite gaps as explicit `null` slots (`spanGaps: false`) and labels provenance tier (`SAT OBS`, `REANALYSIS`, `USER CSV/JSON`, `DEMO`).
-- **10. Earth Compute Lab & FastAPI Backend (Python)**:
-  - **Auto-SARIMAX & STL Decomposition**: Kalman state-space forecasting handling native `NaN` gaps, 80%/95% prediction intervals, Ljung-Box diagnostics, and holdout backtest.
-  - **Bayesian Adaptive MCMC**: Multi-chain Metropolis-within-Gibbs (`robust_ar1` Student-t + `changepoint` hinge) with split-$\hat{R}$, Bulk ESS, 95% HDI, and $P(\text{slope} > 0)$.
-  - **Extreme Value Modeling**: SciPy MLE `GEV` (Block Maxima) & `GPD` (Peaks-Over-Threshold) with parametric bootstrap 95% CIs and KS goodness-of-fit.
-  - **Gridded Spatial FDR (Wilks, 2016)**: Vectorized per-pixel Mann-Kendall across 3D grids/cubes with Benjamini-Yekutieli / BH / Holm / Bonferroni pruning and interactive pixel inspector.
-  - **Geospatial Rasters & SAR (`rasterio`)**: DEM Differencing (DoD erosion/deposition volume & LoD mask), Adaptive Lee speckle filter + SAR log-ratio change detection + keyless NASA ASF catalog search, and LULC transition matrices ($\kappa$).
-  - **NASA Live Fire, Atmosphere & NetCDF4 (`xarray`)**: FIRMS MAP_KEY proxy + keyless NASA EONET v3 wildfires, Domain 1 AIRS/MERRA-2 vertical sounding profiles, Domain 11 trace gases ($\text{NO}_2, \text{CH}_4, \text{CO}, \text{SO}_2$), NetCDF4/HDF5 inspection & extraction, and AppEEARS task proxy.
+### Explorer
 
----
+- Select Earth variables including temperature, precipitation, NDVI, soil
+  moisture, evapotranspiration, aerosol optical depth, land-surface
+  temperature, ozone, and additional atmosphere, land, ocean, and hydrology
+  variables.
+- Explore predefined global regions or click any map coordinate.
+- Retrieve supported live feeds through the connector registry and NASA POWER,
+  with an explicitly labeled calibrated demonstration fallback when a live
+  endpoint is unavailable.
+- View raw values, deseasonalized anomalies, rolling means, trend estimates,
+  confidence bands, provenance, and missing observations.
+- Export the active analysis as CSV/JSON or a printable dossier.
 
-## 🚀 Quickstart & Local Setup
+### Statistical Lab
 
-### Frontend (Browser + Keyless Client Connectors)
+The browser-side lab includes descriptive and inferential statistics, OLS and
+robust/nonlinear regression, ANOVA, PCA, residual diagnostics, change-point
+analysis, extreme-value fitting, and autocorrelation-aware Mann-Kendall
+methods. Heavy operations can run in a Web Worker with a main-thread fallback.
+
+### Data Detective and regional contrasts
+
+Detective Mode provides four guided investigations covering Arctic warming,
+Amazon canopy loss, Aral Sea decline, and California soil-moisture stress.
+Regional Contrast compares paired locations whose trends move in opposite
+directions and explains the physical context.
+
+### Earth Compute Lab
+
+The optional backend exposes:
+
+- SARIMA/ARIMA forecasting with diagnostics, decomposition, prediction
+  intervals, and holdout metrics.
+- Multi-chain Bayesian MCMC for robust AR(1) trends and change points.
+- GEV block-maxima and GPD peaks-over-threshold extreme-value analysis.
+- Vectorized gridded Mann-Kendall and BH, BY, Holm, or Bonferroni spatial FDR.
+- DEM differencing, SAR log-ratio change detection, LULC transitions, and ASF
+  catalog search.
+- NASA FIRMS/EONET fire queries and Earthdata CMR, AppEEARS, atmospheric
+  profile, trace-gas, and NetCDF4/HDF5 workflows.
+
+## Architecture
+
+```text
+Browser
+  React 19 + TypeScript + Vite + Tailwind CSS v4
+      ├── NASA POWER and connector integrations
+      ├── Client-side statistics and Web Worker
+      └── /api/v1/* ── Vite proxy (development) ── FastAPI backend
+
+Backend
+  FastAPI + Pydantic
+      ├── NumPy / pandas / SciPy / statsmodels / scikit-learn
+      ├── xarray / netCDF4 / rasterio / shapely
+      └── NASA proxy and uploaded-file workflows
+```
+
+The frontend development server runs on port `3000`; the backend defaults to
+`8000`. The Vite proxy sends `/api` requests to
+`http://127.0.0.1:8000`.
+
+## Requirements
+
+- Node.js with npm
+- Python 3.11 or newer (the backend Docker images use Python 3.12)
+- Optional: Docker for the backend
+- Optional NASA credentials for authenticated FIRMS and Earthdata workflows
+
+## Quick start
+
+### 1. Install frontend dependencies
+
 ```bash
-# 1. Install dependencies
 npm install
+```
 
-# 2. Start the development server (proxies /api -> http://127.0.0.1:8000)
+### 2. Start the frontend
+
+```bash
 npm run dev
 ```
 
-Open your browser at:
-```text
-http://localhost:3000/
-```
+Open <http://localhost:3000>. The browser-only explorer and statistical lab can
+be used without the backend.
 
-### Earth Compute Backend (Python 3.11+ / FastAPI Compute Engine)
-All core Statistical Analysis Lab features and keyless client connectors work standalone in the browser. To unlock Earth Compute Lab server-side modeling (SARIMA, Bayesian MCMC, GEV/GPD, Spatial FDR, DEM/SAR/LULC GeoTIFFs, NetCDF4/HDF5 `xarray`, FIRMS/ASF/CMR proxies):
+### 3. Start the optional backend
+
+In a second terminal:
 
 ```bash
 cd backend
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+python -m pip install -r requirements.txt
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Or run the backend in Docker:
+Backend documentation is available at <http://127.0.0.1:8000/docs>, and the
+health endpoint is <http://127.0.0.1:8000/api/v1/health>.
+
+### Backend with Docker
+
 ```bash
 cd backend
-docker build -t geo-iris-backend .
-docker run -p 8000:8000 --env-file .env geo-iris-backend
+docker build -t heraoculus-backend .
+docker run --rm -p 8000:8000 --env-file .env heraoculus-backend
 ```
 
-#### Optional Credentials (`backend/.env` or Session Auth UI)
-Keyless NASA APIs (`NASA POWER`, `EONET v3 Wildfires`, `CMR Granules`, `ASF SAR Search`) work with zero keys. For authenticated feeds, copy `backend/.env.example` to `backend/.env` or enter session-only keys in the Earth Compute Lab UI:
-- `NASA_FIRMS_MAP_KEY`: Enables sub-km VIIRS / MODIS active fire FRP queries.
-- `EARTHDATA_TOKEN` (or `EARTHDATA_USERNAME` / `EARTHDATA_PASSWORD`): Enables authenticated AppEEARS task submission & Earthdata access.
-- `VITE_BACKEND_URL` (frontend optional): Set when deploying static frontend separately from FastAPI (defaults to Vite `/api` proxy locally).
+If no `.env` exists, omit `--env-file .env` or create one from
+[`backend/.env.example`](backend/.env.example).
 
-### Build & Preview Commands
+## Configuration and credentials
+
+Copy the example file before adding optional credentials:
+
 ```bash
-# Run TypeScript compilation & production build
+cp backend/.env.example backend/.env
+```
+
+Supported settings include:
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `BACKEND_HOST` | Backend bind host | `127.0.0.1` |
+| `BACKEND_PORT` | Backend port | `8000` |
+| `CORS_ORIGINS` | Comma-separated browser origins | Local ports `3000` and `5173` |
+| `NASA_FIRMS_MAP_KEY` | NASA FIRMS active-fire API key | Empty |
+| `EARTHDATA_TOKEN` | NASA Earthdata bearer token | Empty |
+| `EARTHDATA_USERNAME` / `EARTHDATA_PASSWORD` | Earthdata login alternative | Empty |
+| `VITE_BACKEND_URL` | Frontend backend base URL for a separately deployed API | Vite `/api` proxy |
+
+FIRMS and Earthdata credentials can also be configured for the current
+backend session through the UI/API. Secrets are masked in status responses and
+are not intended to be persisted by the application. Keyless feeds such as
+NASA POWER, EONET, CMR, ASF search, local uploads, and demonstration fallbacks
+remain available where supported.
+
+## Backend API
+
+All routes below are prefixed as shown. Request and response schemas are
+defined in [`backend/app/schemas.py`](backend/app/schemas.py), and interactive
+OpenAPI documentation is generated at `/docs`.
+
+| Prefix | Operations |
+| --- | --- |
+| `/api/v1` | `GET /health`, `GET /auth/status`, `POST /auth/configure` |
+| `/api/v1/stats` | `POST /sarima`, `/bayesian-mcmc`, `/extreme-value`, `/spatial-fdr` |
+| `/api/v1/firms` | `POST /fires` |
+| `/api/v1/earthdata` | `POST /granules`, `/appeears-point`, `/vertical-profile`, `/trace-gases`, `/netcdf/inspect`, `/netcdf/extract` |
+| `/api/v1/rasters` | `POST /dem-diff`, `/dem-diff/upload`, `/sar-change`, `/sar-change/upload`, `/asf-search`, `/lulc-transitions`, `/lulc-transitions/upload` |
+
+Uploaded GeoTIFF and NetCDF/HDF5 requests are bounded by a 35 MB backend
+safety limit. Use the generated API docs for exact multipart fields and JSON
+payloads.
+
+## Data provenance
+
+Every active series is assigned one of these provenance tiers:
+
+- **Satellite observation**: direct satellite or in-situ connector data.
+- **NASA model / reanalysis**: gridded POWER, MERRA-2, GLDAS, or related model
+  data.
+- **User upload**: CSV or JSON supplied through the Data Studio.
+- **Calibrated demonstration**: offline fallback data labeled in the UI.
+
+Missing values are preserved where possible, including NASA fill values such
+as `-999`. Statistical views report the usable sample and missingness rather
+than silently presenting a complete series.
+
+## Development commands
+
+```bash
+# Type-check and create the production frontend bundle
 npm run build
 
-# Preview production build locally
+# Serve the production bundle locally
 npm run preview
+
+# Run backend tests
+cd backend
+python -m pytest
 ```
 
----
+The repository also contains focused TypeScript verification scripts in
+[`tests/`](tests/) and statistical unit tests beside their implementation in
+[`src/services/statistics/`](src/services/statistics/). There is currently no
+dedicated npm test script; use the project’s configured TypeScript/build
+checks and the backend pytest suite when validating changes.
 
-## 📐 Scientific & Mathematical Methodology
+## Deployment
 
-### 1. Deseasonalization (Monthly Anomaly Extraction)
-Earth's 23.5° axial tilt causes massive natural annual oscillations. To isolate long-term climate trends, we compute the 30-year monthly climatological mean $`\bar{X}_m`$:
+The root [`vercel.json`](vercel.json) builds the Vite frontend with
+`npm run build`, serves `dist`, and rewrites browser routes to
+`index.html`. The backend includes a standard
+[`backend/Dockerfile`](backend/Dockerfile) and a Vercel-oriented
+[`backend/Dockerfile.vercel`](backend/Dockerfile.vercel).
 
-```math
-\bar{X}_m = \frac{1}{K} \sum_{k=1}^{K} X_{k, m} \quad \text{for } m \in \{1, 2, \dots, 12\}
-```
+For a separately hosted backend, set `VITE_BACKEND_URL` at frontend build time
+and configure the backend’s `CORS_ORIGINS` for the deployed frontend origin.
+Do not commit `backend/.env` or any API credentials.
 
-The deseasonalized anomaly $`A_{y, m}`$ is then:
+## Repository map
 
-```math
-A_{y, m} = X_{y, m} - \bar{X}_m
-```
-
-### 2. Mann-Kendall Non-Parametric Trend Test
-Recommended by the World Meteorological Organization (WMO) and NASA for environmental time-series because it does not assume normal distributions and resists extreme outliers:
-
-```math
-S = \sum_{k=1}^{n-1} \sum_{j=k+1}^{n} \text{sgn}(y_j - y_k)
-```
-
-```math
-\text{Var}(S) = \frac{n(n-1)(2n+5) - \sum_{i=1}^{g} t_i(t_i-1)(2t_i+5)}{18}
-```
-
-```math
-Z = \begin{cases}
-\dfrac{S - 1}{\sqrt{\text{Var}(S)}} & \text{if } S > 0 \\
-0 & \text{if } S = 0 \\
-\dfrac{S + 1}{\sqrt{\text{Var}(S)}} & \text{if } S < 0
-\end{cases}
-```
-
-```math
-p = 2 \cdot \left(1 - \Phi(|Z|)\right)
-```
-
-### 3. Theil-Sen Robust Slope Estimator
-Calculates the median of all pairwise slopes across $`N`$ observations:
-
-```math
-Q_{\text{med}} = \text{median} \left\{ \frac{y_j - y_i}{t_j - t_i} \right\} \quad \text{for } 1 \le i < j \le n
-```
-
-### 4. Significance Classification
-- $`p < 0.001`$ (**`***`**): **Extremely Significant** — Less than 0.1% chance of coincidental weather noise.
-- $`p < 0.01`$ (**`**`**): **Highly Significant** — Very strong empirical certainty.
-- $`p < 0.05`$ (**`*`**): **Statistically Significant** — Standard scientific threshold for hypothesis rejection ($`H_0`$: no trend).
-- $`p < 0.10`$ (**`†`**): **Marginally Significant** — Emerging trend, needs longer baseline.
-- $`p \ge 0.10`$ (**`n.s.`**): **Not Significant** — Variations remain within natural climate variability.
-
----
-
-## 🛰️ NASA Mission & Instrument Coverage
-- **MODIS (Terra & Aqua)**: Normalized Difference Vegetation Index (NDVI), Aerosol Optical Depth (AOD), Land Surface Temperature (LST).
-- **AIRS (Aqua)**: High-resolution atmospheric sounding of 2-meter air temperature and water vapor.
-- **OMI (Aura)**: Atmospheric ozone column and aerosol absorbing indices.
-- **GPM (Global Precipitation Measurement)**: Satellite constellation precipitation radar and microwave radiometers (IMERG).
-- **MERRA-2**: NASA GMAO atmospheric reanalysis synthesizing 40+ years of satellite data.
-- **GLDAS-2**: Global Land Data Assimilation System modeling root-zone soil moisture and evapotranspiration fluxes.
-- **SMAP**: Active-passive microwave radiometry measuring topsoil moisture.
-
----
-
-## 🏛️ Project Structure
 ```text
-Geo-Iris/
-├── backend/                         # Phase 2 Python FastAPI compute engine
-│   ├── app/
-│   │   ├── main.py                  # FastAPI entrypoint, CORS, /api/v1 routers
-│   │   ├── config.py & schemas.py   # Settings & Pydantic v2 request schemas
-│   │   ├── routers/                 # health/auth, stats, firms, earthdata, rasters
-│   │   └── services/                # SARIMAX, MCMC, GEV/GPD, FDR, FIRMS, xarray, rasterio
-│   ├── tests/                       # Pytest unit & FastAPI TestClient suite
-│   ├── requirements.txt             # Python scientific dependencies
-│   ├── .env.example                 # Optional Earthdata & FIRMS keys template
-│   └── Dockerfile                   # Container image with GDAL/HDF5 support
-├── public/
-│   ├── favicon.svg
-│   └── icons.svg
-├── src/
-│   ├── types/
-│   │   └── earthScience.ts          # Type definitions for variables, regions, stats
-│   ├── services/
-│   │   ├── statistics/              # Modular MK, TFPW, Hamed-Rao, ANOVA, LM nonlinear, GEV, PCA
-│   │   ├── connectors/              # NASA POWER, ORNL MODIS, NOAA Tides, USGS Water, GIBS
-│   │   ├── phase2Api.ts             # Typed REST client for Phase 2 backend (/api/v1/*)
-│   │   ├── nasaData.ts              # NASA POWER API client & CSV/JSON parsers
-│   │   ├── detectiveCases.ts        # 4 interactive student mystery files
-│   │   └── regionalContrasts.ts     # Opposite regional trend paired scenarios
-│   ├── workers/                     # Off-thread statistical Web Worker + client
-│   ├── components/
-│   │   ├── Phase2Lab/               # Earth Compute Lab UI (SARIMA/MCMC/EVT, Spatial FDR, DEM/SAR/LULC, FIRMS, NetCDF4)
-│   │   ├── StatisticalLab/          # Univariate, Multivariate, Inferential, Regression, Diagnostics
-│   │   ├── Navbar.tsx               # Navigation, GEOIRIS branding, API status
-│   │   ├── EarthMap.tsx             # Interactive Leaflet map & coordinate picker
-│   │   ├── VariableSelector.tsx     # Mission badges, category filters & simple definitions
-│   │   ├── TimeSeriesChart.tsx      # Chart.js time series with layers, gap preservation & GIBS
-│   │   ├── SignificanceBadge.tsx    # Statistical badges & explainer modal
-│   │   ├── StatsSummaryCard.tsx     # Metric cards with provenance & missingness badge
-│   │   ├── PlainEnglishSummary.tsx  # Data Detective verdict & physical drivers
-│   │   ├── DetectiveMode.tsx        # Gamified student mystery investigation
-│   │   ├── RegionalContrastView.tsx # Side-by-side opposite trend solver
-│   │   ├── VariableEncyclopedia.tsx # Satellite & model directory & glossary
-│   │   ├── CustomDataUploader.tsx   # Connector-routed coordinate query & CSV/JSON uploader
-│   │   └── DataExportModal.tsx      # CSV, JSON, and print dossier generator
-│   ├── App.tsx                      # Root application layout, provenance & mode routing
-│   ├── main.tsx                     # React application entry point
-│   ├── index.css                    # Tailwind CSS v4 styling & GEOIRIS dark palette
-│   └── vite-env.d.ts                # Vite client environment types
-├── index.html                       # HTML5 template with GEOIRIS metadata
-├── package.json                     # Dependencies & scripts
-├── tsconfig.json                    # TypeScript compiler options
-└── vite.config.ts                   # Vite bundler + /api proxy configuration
+src/
+  App.tsx                         Main application state and mode routing
+  components/                     Explorer, labs, maps, charts, and UI
+  services/connectors/             NASA and public-data connector registry
+  services/statistics/             Browser statistical implementations
+  services/phase2Api.ts            Typed FastAPI client
+  workers/                         Off-thread statistical computation
+  types/earthScience.ts            Shared domain and provenance types
+backend/app/
+  main.py                         FastAPI entrypoint and CORS
+  routers/                        Health, statistics, Earthdata, FIRMS, rasters
+  services/                       Scientific models and external-data adapters
+  schemas.py                      Pydantic API contracts
+backend/tests/                    Backend API and scientific validation tests
+public/                           Browser icons and static assets
 ```
 
----
+## License and external data
 
-## 👥 Audience & Educational Impact
-Built specifically for **high school & college students, educators, and science enthusiasts** ("Data Detectives"), translating complex satellite and statistical mechanics into accessible, interactive discoveries.
+No license file is currently included in this repository. Review the terms of
+each upstream provider before redistributing data or derived products,
+including NASA, NOAA, USGS, ASF, and other connector sources.
