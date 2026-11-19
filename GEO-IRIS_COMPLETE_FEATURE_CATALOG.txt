@@ -1,0 +1,762 @@
+================================================================================
+GEO-IRIS / HERAOCULUS — Earth Science Change Detective & Significance Engine
+Complete Feature & Statistical Analysis Catalog
+================================================================================
+Generated: 2026-11-19
+Project Root: D:\Geo-Iris-main\Geo-Iris-main
+
+================================================================================
+1. PROJECT OVERVIEW
+================================================================================
+
+Project Name: GEOIRIS / HERAOCULUS
+Description: Earth Science Change Detective & Significance Engine
+Architecture: Full-stack web application
+  - Frontend: React 19 + TypeScript + Vite + Tailwind CSS v4 (port 3000)
+  - Backend: Python FastAPI (port 8000), Dockerized, Vercel-ready
+  - API Proxy: Frontend proxies /api -> http://127.0.0.1:8000 via vite.config.ts
+  - Communication: REST JSON API; Web Workers for heavy client-side compute
+
+Git: Not a git repository (no .git directory found)
+
+================================================================================
+2. DIRECTORY STRUCTURE
+================================================================================
+
+D:\Geo-Iris-main\Geo-Iris-main\
+  ├─ src/                          Frontend source
+  │   ├─ main.tsx                  React entry point
+  │   ├─ index.css                 Tailwind v4 + global styles
+  │   ├─ App.tsx                   Main app shell (routing/layout)
+  │   ├─ types/
+  │   │   └─ earthScience.ts       Core domain types (VariableId, ProvenanceTier,
+  │   │                              EarthVariable, etc.)
+  │   ├─ services/
+  │   │   ├─ nasaData.ts           Core earth variables + NASA POWER data fetch
+  │   │   ├─ nasaDataExpanded.ts   Expanded NASA dataset definitions
+  │   │   ├─ statistics/           10 statistical analysis modules
+  │   │   ├─ connectors/           6 NASA data connectors + registry
+  │   │   ├─ phase2Api.ts          FastAPI backend client interfaces
+  │   │   ├─ detectiveCases.ts     Detective mode case definitions
+  │   │   └─ regionalContrasts.ts  Regional contrast view data
+  │   ├─ workers/
+  │   │   ├─ statsWorker.ts        Web Worker: heavy statistical computations
+  │   │   └─ statsWorkerClient.ts  Client-side worker dispatch + fallback
+  │   ├─ components/               React UI components
+  │   ├─ charts/                   Chart components (recharts/chart.js)
+  │   ├─ ui/                       Base UI primitives
+  │   └─ theme/
+  │       └─ tokens.ts             Design tokens (colors, spacing, etc.)
+  ├─ public/                       Static assets
+  ├─ example/                      Example data/config
+  ├─ backend/                      Python FastAPI backend
+  │   ├─ app/
+  │   │   ├─ main.py               FastAPI app entrypoint + CORS + router mounting
+  │   │   ├─ config.py             Runtime settings (dataclass, .env via python-dotenv)
+  │   │   ├─ schemas.py            Pydantic v2 request/response schemas
+  │   │   ├─ routers/
+  │   │   │   ├─ __init__.py
+  │   │   │   ├─ health.py         Health check + auth status/configure
+  │   │   │   ├─ earthdata.py      NetCDF4, AppEEARS, vertical profiles, trace gases
+  │   │   │   ├─ firms.py          NASA FIRMS active fire queries
+  │   │   │   ├─ rasters.py        DEM DoD, SAR change, LULC, ASF search
+  │   │   │   ├─ stats_advanced.py SARIMA, Bayesian MCMC, Extreme Value, Spatial FDR
+  │   │   │   └─ utils.py          Upload file size enforcement
+  │   │   ├─ services/
+  │   │   │   ├─ __init__.py
+  │   │   │   ├─ auth_store.py     Thread-safe session credential store (masked)
+  │   │   │   ├─ earthdata_service.py NetCDF4/HDF5, CMR, AIRS, trace gases, AppEEARS
+  │   │   │   ├─ firms_service.py  FIRMS MAP_KEY + EONET v3 keyless fallback
+  │   │   │   ├─ forecast_service.py SARIMAX forecasting + diagnostics
+  │   │   │   ├─ bayesian_service.py Multi-chain MCMC (robust_ar1, changepoint)
+  │   │   │   ├─ extreme_service.py GEV block maxima + GPD POT
+  │   │   │   ├─ raster_service.py DEM DoD, SAR log-ratio, LULC transitions, ASF
+  │   │   │   └─ spatial_fdr_service.py Vectorized Mann-Kendall + Spatial FDR
+  │   ├─ tests/
+  │   │   ├─ test_earthdata_firms.py
+  │   │   ├─ test_health_and_auth.py
+  │   │   ├─ test_rasters.py
+  │   │   └─ test_stats_advanced.py
+  │   ├─ requirements.txt          Python dependencies (22 packages)
+  │   ├─ Dockerfile                Python 3.12-slim, port 8000
+  │   ├─ Dockerfile.vercel         Vercel deployment, port 80
+  │   └─ .env.example              Example environment configuration
+  ├─ tests/                        (frontend tests location, if any)
+  ├─ workers/                      (root-level workers reference)
+  ├─ assets/                       Static assets
+  ├─ theme/                        (root-level theme reference)
+  ├─ package.json                  Frontend scripts + dependencies
+  ├─ README.md                     Project documentation
+  ├─ index.html                    Vite HTML entry
+  ├─ vite.config.ts                Vite config + API proxy + manual chunks
+  ├─ tsconfig.json                 TypeScript strict config
+  └─ vercel.json                   Vercel deployment config
+
+================================================================================
+3. FRONTEND FEATURES
+================================================================================
+
+3.1 Core Types (src/types/earthScience.ts)
+  - VariableId: string union type for earth science variables
+  - ProvenanceTier: "satellite_observation" | "reanalysis_model" |
+    "user_upload" | "synthetic_demo"
+  - EarthVariable: id, name, unit, provenance, description, etc.
+  - ProvenanceMetadata: tier, source_name, dataset_id, is_live,
+    status_message, citation
+  - Time series, stats result, significance, detective case types
+
+3.2 NASA Data Connectors (src/services/connectors/)
+  6 connectors + registry:
+  1. POWER (NASA POWER solar/meteorological data)
+  2. MODIS (Moderate Resolution Imaging Spectroradiometer)
+  3. GIBS (Global Imagery Browse Services)
+  4. NOAA (National Oceanic and Atmospheric Administration)
+  5. USGS (United States Geological Survey)
+  6. CMR (Common Metadata Repository)
+  Plus connector registry for dynamic lookup
+
+3.3 Frontend Statistics Modules (src/services/statistics/) — 10 modules
+  1. bootstrapCI          — Bootstrap confidence intervals (B >= 2000 iterations)
+  2. pcaAnalysis          — Principal Component Analysis / SVD decomposition
+  3. seasonalMannKendall  — Seasonal Mann-Kendall trend test with autocorrelation
+                            correction (standard, hamed_rao, tfpw methods)
+  4. senSlopeExact        — Theil-Sen pairwise slopes (full O(n^2) exact)
+  5. pettittChangePoint   — Pettitt change-point detection
+  6. computeDescriptiveStats — Descriptive summary statistics
+  7. nonlinearRegression  — Exponential, logarithmic, power, quadratic, logistic
+  8. fitGEV               — Generalized Extreme Value distribution fitting
+  9. runOneWayAnova       — One-way ANOVA
+  10. index.ts            — Barrel re-export of all 10 modules
+
+3.4 Frontend Web Worker (src/workers/)
+  - statsWorker.ts: Offloads heavy computations from main thread
+    Supported task types:
+    - bootstrap          (bootstrap CI)
+    - theilSenFull       (Theil-Sen full pairwise slopes)
+    - seasonalMK         (seasonal Mann-Kendall)
+    - pca                (PCA/SVD)
+    - pettitt            (Pettitt change point)
+    - descriptive        (descriptive statistics)
+    - nonlinear          (nonlinear regression)
+    - gev                (GEV fit)
+    - anova              (one-way ANOVA)
+  - statsWorkerClient.ts: Dispatches tasks to worker with main-thread fallback
+    when Web Workers unavailable; returns { result, durationMs, viaWorker }
+
+3.5 Backend API Client (src/services/phase2Api.ts)
+  - Typed interfaces for calling FastAPI backend endpoints:
+    /api/v1/health, /api/v1/auth/*, /api/v1/earthdata/*,
+    /api/v1/firms/fires, /api/v1/rasters/*, /api/v1/stats/*
+
+3.6 UI Components (src/components/)
+  - Navbar.tsx              Application navigation
+  - EarthMap.tsx            Interactive earth/map visualization
+  - TimeSeriesChart.tsx     Time series plotting
+  - VariableSelector.tsx    Variable selection UI
+  - StatsSummaryCard.tsx    Statistics summary display
+  - PlainEnglishSummary.tsx Natural language statistical interpretation
+  - SignificanceBadge.tsx   Significance level indicator
+  - IrisGauge.tsx           Iris/gauge visualization
+  - CustomDataUploader.tsx  Custom data file upload
+  - DataExportModal.tsx     Data export dialog
+  - DetectiveMode.tsx       Detective mode investigation interface
+  - VariableEncyclopedia.tsx Variable reference encyclopedia
+  - RegionalContrastView.tsx Regional comparison view
+
+3.7 Chart Components (src/charts/) — 6 files
+  Time series, statistical, and spatial chart visualizations
+
+3.8 UI Primitives (src/ui/) — 5 files
+  Base reusable UI components
+
+3.9 Theme (src/theme/tokens.ts)
+  Design tokens: colors, spacing, typography, breakpoints
+
+================================================================================
+4. BACKEND FEATURES (FastAPI)
+================================================================================
+
+4.1 Application Entry (backend/app/main.py)
+  - FastAPI app: title "Geo-Iris Phase 2 Scientific Compute & NASA Proxy API"
+  - Version: 2.0.0
+  - CORS middleware: allows localhost:3000, 127.0.0.1:3000, 5173 +
+    vercel.app regex pattern
+  - Root endpoint: GET / returns service info, version, docs URL, health URL
+  - Routers mounted (all prefixed /api/v1):
+    1. health.router        — Health & Auth
+    2. stats_advanced.router — Advanced Scientific Statistics
+    3. firms.router         — Wildfire & FIRMS
+    4. earthdata.router     — Earthdata & NetCDF4
+    5. rasters.router       — SAR, DEM & LULC Rasters
+
+4.2 Configuration (backend/app/config.py)
+  - Settings dataclass (frozen) loaded from .env via python-dotenv
+  - app_name, version, host (default 127.0.0.1), port (default 8000)
+  - cors_origins: configurable list from CORS_ORIGINS env var
+  - max_upload_bytes: 35 MB (35 * 1024 * 1024) safety bound for uploads
+  - http_timeout_seconds: 25.0
+
+4.3 Health & Auth Router (backend/app/routers/health.py)
+  Prefix: /api/v1
+  Endpoints:
+  - GET /health             → HealthResponse (status, version, capabilities,
+                              auth status)
+  - GET /auth/status        → AuthStatusResponse
+  - POST /auth/configure    → Configure Earthdata/FIRMS credentials (session-only)
+  Capabilities reported: sarima, bayesian_mcmc, extreme_value_gev_gpd,
+  spatial_fdr, netcdf4_hdf5_xarray, rasterio_dem_sar_lulc,
+  firms_eonet_proxy, asf_sar_search, appeears_cmr_proxy
+
+4.4 Auth Store (backend/app/services/auth_store.py)
+  - Thread-safe credential store (threading.Lock)
+  - Resolves env defaults + session-level overrides
+  - Credentials: earthdata_token, earthdata_username, earthdata_password,
+    firms_map_key
+  - Secret masking: raw secrets never echoed in API responses
+  - Methods: configure(), get_firms_map_key(), get_earthdata_token(),
+    get_earthdata_credentials(), has_earthdata_auth(), status()
+  - Keyless feeds always available: EONET v3, ASF SAR, CMR, local uploads
+
+4.5 Earthdata Router (backend/app/routers/earthdata.py)
+  Prefix: /api/v1/earthdata
+  Endpoints:
+  - POST /granules          → Search NASA CMR granules (EarthdataGranuleRequest)
+  - POST /appeears-point    → Submit AppEEARS point task (AppeearsPointRequest)
+  - POST /vertical-profile  → Vertical pressure profile (VerticalProfileRequest)
+  - POST /trace-gases       → Trace gas analytics (TraceGasRequest)
+  - POST /netcdf/inspect    → Inspect uploaded NetCDF4/HDF5 file
+  - POST /netcdf/extract    → Extract time series from uploaded NetCDF4/HDF5
+
+4.6 FIRMS Router (backend/app/routers/firms.py)
+  Prefix: /api/v1/firms
+  Endpoints:
+  - POST /fires             → NASA FIRMS active fire query (FirmsQueryRequest)
+
+4.7 Rasters Router (backend/app/routers/rasters.py)
+  Prefix: /api/v1/rasters
+  Endpoints:
+  - POST /dem-diff                    → DEM differencing preset
+  - POST /dem-diff/upload             → DEM differencing from uploaded GeoTIFFs
+  - POST /sar-change                  → SAR change detection preset
+  - POST /sar-change/upload           → SAR change from uploaded GeoTIFFs
+  - POST /asf-search                  → NASA ASF SAR granule search
+  - POST /lulc-transitions            → LULC transitions preset
+  - POST /lulc-transitions/upload     → LULC from uploaded GeoTIFFs
+
+4.8 Stats Advanced Router (backend/app/routers/stats_advanced.py)
+  Prefix: /api/v1/stats
+  Endpoints:
+  - POST /sarima         → SARIMA/ARIMA forecasting (SarimaRequest)
+  - POST /bayesian-mcmc  → Bayesian MCMC trend & changepoint (BayesianMcmcRequest)
+  - POST /extreme-value  → GEV/GPD extreme value analysis (ExtremeValueRequest)
+  - POST /spatial-fdr    → Spatial FDR Mann-Kendall (SpatialFdrRequest)
+
+================================================================================
+5. BACKEND SERVICES (Detailed)
+================================================================================
+
+5.1 Earthdata Service (backend/app/services/earthdata_service.py)
+  Functions:
+  - _open_xarray_bytes()              Open NetCDF3/4/HDF5 via xarray (temp file)
+  - inspect_netcdf_file()             Inspect dims, coords, variables, units,
+                                      stats, global attributes
+  - extract_netcdf_subset()           Extract 1D time series or (T,H,W) cube
+                                      from uploaded NetCDF/HDF5; optional
+                                      spatial mean or point selection
+  - search_earthdata_granules()       Query NASA CMR granule catalog (keyless
+                                      public metadata); fallback to synthetic
+  - get_vertical_pressure_profile()   AIRS3STM / MERRA2 vertical sounding
+                                      profile (1000-100 hPa), radiative-convective
+                                      benchmark, tropospheric warming +
+                                      stratospheric cooling
+  - get_trace_gas_analytics()         OMI/TROPOMI trace gas trends: NO2, CH4,
+                                      CO, SO2 with seasonal climatology
+  - proxy_appeears_point_task()       Proxy AppEEARS REST task submission
+                                      (requires EDL credentials)
+
+5.2 FIRMS Service (backend/app/services/firms_service.py)
+  Functions:
+  - _build_synthetic_firms_response()  Labeled synthetic wildfire FRP demo
+  - _query_eonet_wildfires()           Keyless live NASA EONET v3 wildfire feed
+  - query_firms_fires()                Main entry: FIRMS MAP_KEY live query ->
+                                       EONET v3 keyless fallback -> synthetic demo
+
+5.3 Forecast Service (backend/app/services/forecast_service.py)
+  Functions:
+  - _parse_dates()                     Date string normalization
+  - _next_month_labels()               Generate future YYYY-MM forecast labels
+  - _fit_sarimax()                     Fit SARIMAX state-space model
+  - _auto_select_order()               Curated AIC model selection (8 candidates)
+  - run_sarima_forecast()              Full SARIMA pipeline:
+                                       - Missing-gap support (NaN preserved)
+                                       - Auto order selection or manual
+                                       - 95% and 80% prediction intervals
+                                       - Holdout backtest (RMSE, MAE, MAPE)
+                                       - Ljung-Box residual autocorrelation test
+                                       - Shapiro-Wilk normality test
+                                       - Seasonal decomposition (STL/classical)
+                                       - Model candidate AIC/BIC table
+
+5.4 Bayesian Service (backend/app/services/bayesian_service.py)
+  Functions:
+  - _compute_hdi()                     Highest Density Interval (95% default)
+  - _split_rhat()                      Split Gelman-Rubin convergence diagnostic
+  - _estimate_ess()                    Effective Sample Size estimation
+  - _summarize_param()                 Parameter summary (mean, median, sd, HDI,
+                                       CI, R-hat, ESS)
+  - _histogram()                       Posterior histogram (density)
+  - _run_robust_ar1_mcmc()             Model: robust_ar1
+      Student-t (nu=5) likelihood, irregular-gap AR(1) covariance (rho^dt),
+      linear trend + annual harmonic (sin/cos), adaptive Metropolis-within-Gibbs
+  - _run_changepoint_mcmc()            Model: changepoint
+      Bayesian piecewise linear hinge regression, unknown changepoint tau,
+      pre-shift slope beta_1, slope change delta
+  - run_bayesian_mcmc()                Entry point:
+      - model_type: robust_ar1 | changepoint
+      - chains (2-4), draws (300-2500), burn_in (150-1200), seed
+      - Reports: R-hat, ESS, HDI-95, CI-95, Probability of Direction,
+        posterior traces, predictive trend envelopes
+
+5.5 Extreme Value Service (backend/app/services/extreme_service.py)
+  Functions:
+  - _bootstrap_return_ci()             Bootstrap confidence intervals for return levels
+  - run_extreme_value_analysis()       Entry point:
+      - mode: gev_block_maxima | gpd_pot
+      - GEV: block maxima, genextreme fit, KS test, Gringorten plotting positions,
+        family classification (Frechet/Weibull/Gumbel), return levels + 95% CI
+      - GPD: Peaks-Over-Threshold, genpareto fit, threshold quantile,
+        exceedance rate per year, return levels + 95% CI
+
+5.6 Raster Service (backend/app/services/raster_service.py)
+  Functions:
+  - _read_raster_bytes()               Read GeoTIFF via rasterio (temp file)
+  - _align_second_raster()             Reproject/resample second raster to first grid
+  - _encode_png() / _render_scalar_png()  Render scalar arrays to base64 PNG
+  - _render_categorical_png()          Render classified rasters to base64 PNG
+  - _synthetic_dem_pair()              Synthetic DEM pairs (3 scenarios)
+  - compute_dem_differencing()         DEM of Difference (DoD):
+      - Level-of-Detection (LoD) threshold
+      - Deposition/erosion masks, volume budgets (m^3)
+      - Histogram of elevation changes
+      - Base64 PNG previews: before, after, DoD, LoD mask
+  - compute_dem_differencing_from_files() Uploaded GeoTIFF DEM pair
+  - _synthetic_sar_pair()              Synthetic SAR pairs (3 scenarios)
+  - compute_sar_change_detection()     SAR log-ratio change detection:
+      - Speckle filters: none, Lee, mean
+      - Otsu suggested threshold
+      - Backscatter drop/gain area (km^2)
+      - Base64 PNG previews
+  - compute_sar_change_from_files()    Uploaded GeoTIFF SAR pair
+  - search_asf_sar_granules()          NASA ASF SAR Search API (keyless)
+  - _synthetic_lulc_pair()             Synthetic LULC pairs (3 scenarios)
+  - LULC_CLASS_LABELS / LULC_PALETTE   6 land cover classes with colors
+  - compute_lulc_transitions()         LULK transition matrix:
+      - KxK confusion matrix, Cohen's Kappa, overall persistence
+      - Per-class before/after %, net change, persistence
+      - Base64 PNG previews: before, after, change mask
+  - compute_lulc_from_files()          Uploaded classified GeoTIFF pair
+
+5.7 Spatial FDR Service (backend/app/services/spatial_fdr_service.py)
+  Functions:
+  - _build_synthetic_climate_cube()    Synthetic spatio-temporal anomaly grid
+  - _vectorized_mk_and_slope()         Vectorized per-cell Mann-Kendall:
+      - S statistic, variance, Z-score, two-sided p-value
+      - OLS slope per decade (NaN-safe)
+  - _render_spatial_png()              Render spatial slope/FDR PNG (base64)
+  - run_spatial_fdr_analysis()         Entry point:
+      - Grid: rows, cols, n_years, center_lat/lon
+      - Methods: BH (fdr_bh), BY (fdr_by), Holm, Bonferroni
+      - Alpha level, optional uploaded 3D cube (T,H,W)
+      - Reports: raw significant cells, FDR significant cells,
+        false positives pruned, % area significant, field significance,
+        Wilks (2016) effective alpha, min p-value, min q-value,
+        max/min slope per decade, base64 trend + FDR PNG previews
+
+================================================================================
+6. BACKEND SCHEMAS (Pydantic v2)
+================================================================================
+
+(File: backend/app/schemas.py)
+
+6.1 Provenance
+  - ProvenanceTier: satellite_observation | reanalysis_model |
+    user_upload | synthetic_demo
+  - ProvenanceMetadata: tier, source_name, dataset_id, is_live,
+    status_message, citation?
+
+6.2 Auth
+  - AuthConfigRequest: earthdata_token?, earthdata_username?,
+    earthdata_password?, firms_map_key?, clear_session?
+  - AuthStatusResponse: earthdata_configured, earthdata_source,
+    earthdata_username_hint?, earthdata_token_hint?, firms_configured,
+    firms_source, firms_key_hint?, keyless_feeds_available[]
+  - HealthResponse: status, version, capabilities{}, auth
+
+6.3 Time Series Input
+  - TimeSeriesInputPoint: date, value?
+
+6.4 SARIMA Request (SarimaRequest)
+  - dates[] (min 24), values[] Optional<float> (min 24)
+  - forecast_steps (1-60, default 12)
+  - seasonal_period (1-24, default 12)
+  - auto_order (bool, default true)
+  - order: (p,d,q) default (1,1,1)
+  - seasonal_order: (P,D,Q,s) default (1,0,1,12)
+  - holdout_size (0-24, default 6)
+  - variable_name? (default "Environmental Series")
+
+6.5 Bayesian MCMC Request (BayesianMcmcRequest)
+  - dates[] (min 12), values[] Optional<float> (min 12)
+  - model_type: robust_ar1 | changepoint (default robust_ar1)
+  - chains (2-4, default 3)
+  - draws (300-2500, default 900)
+  - burn_in (150-1200, default 450)
+  - seed (default 42)
+
+6.6 Extreme Value Request (ExtremeValueRequest)
+  - values[] Optional<float> (min 10)
+  - dates?[]
+  - mode: gev_block_maxima | gpd_pot (default gev_block_maxima)
+  - block_size (2-60, default 12)
+  - threshold_quantile (0.5-0.98, default 0.85)
+  - return_periods[] (default [2,5,10,20,50,100])
+
+6.7 Spatial FDR Request (SpatialFdrRequest)
+  - region_name? (default "Arctic & Boreal Sub-Grid")
+  - center_lat (-90 to 90, default 68.0)
+  - center_lon (-180 to 180, default 20.0)
+  - grid_rows (5-64, default 20)
+  - grid_cols (5-64, default 24)
+  - n_years (8-45, default 20)
+  - alpha (0.001-0.25, default 0.05)
+  - correction_method: bh | by | holm | bonferroni (default by)
+  - cube?[][][] Optional[float] (user-uploaded 3D cube)
+  - seed (default 42)
+
+6.8 FIRMS Request (FirmsQueryRequest)
+  - west, south, east, north (-180 to 180 / -90 to 90)
+  - source: VIIRS_SNPP_NRT | VIIRS_NOAA20_NRT | MODIS_NRT
+  - day_range (1-10, default 5)
+  - region_label?
+  - allow_eonet_fallback (default true)
+
+6.9 Vertical Profile Request (VerticalProfileRequest)
+  - lat, lon, start_year (1980-2025), end_year (1981-2026)
+  - product: AIRS3STM | MERRA2_M2IMNPASM
+
+6.10 Trace Gas Request (TraceGasRequest)
+  - gas: NO2 | CH4 | CO | SO2
+  - lat, lon, region_label?, start_year, end_year
+
+6.11 Earthdata Granule Request (EarthdataGranuleRequest)
+  - short_name (2-64 chars, default "AIRS3STM")
+  - bbox: (float,float,float,float) default (-10,40,20,60)
+  - start_date, end_date
+  - max_results (1-30, default 10)
+
+6.12 AppEEARS Point Request (AppeearsPointRequest)
+  - product (3-64 chars, default "MOD13Q1.061")
+  - layer (2-128 chars, default "_250m_16_days_NDVI")
+  - lat, lon, start_date, end_date, task_name
+
+6.13 Raster Preset Requests
+  - DemDiffPresetRequest: scenario (mount_st_helens_lahar |
+    colorado_river_incision | thwaites_glacier_thinning),
+    lod_threshold_m (0-10, default 0.75),
+    pixel_size_m (0.5-1000, default 10.0)
+  - SarChangePresetRequest: scenario (amazon_seasonal_flooding |
+    rondonia_deforestation_clearcut | kilauea_lava_emplacement),
+    speckle_filter (none|lee|mean, default lee),
+    window_size (3-11, default 5),
+    threshold_db (0.5-15, default 3.0),
+    pixel_size_m (1-1000, default 20.0)
+  - LulcPresetRequest: scenario (amazon_arc_deforestation |
+    pearl_river_urbanization | aral_sea_desiccation)
+  - AsfSearchRequest: lat, lon, radius_deg (0.05-3.0),
+    platform (SENTINEL-1|ALOS|UAVSAR|SEASAT), start_date, end_date,
+    max_results (1-30)
+
+================================================================================
+7. BACKEND TESTS (4 files, 17 tests)
+================================================================================
+
+7.1 test_earthdata_firms.py (3 tests)
+  - test_netcdf_inspect_and_extract_roundtrip:
+      Creates 24-month 3x3 NetCDF cube, tests inspect (dims, var name, units)
+      and extract (24 series points, spatial cube present, user_upload tier)
+  - test_vertical_profile_and_trace_gas_endpoints:
+      Vertical profile: 12 pressure levels, lower troposphere warming > 0,
+      upper stratosphere cooling < 0
+      Trace gas CH4: 72 monthly values (2019-2024)
+  - test_firms_proxy_without_key_handles_gracefully:
+      FIRMS without MAP_KEY returns 200, tier in {satellite_observation,
+      synthetic_demo}, >= 1 detection
+
+7.2 test_health_and_auth.py (2 tests)
+  - test_health_endpoint: status ok, capabilities sarima/bayesian_mcmc/
+    spatial_fdr/netcdf4_hdf5_xarray/rasterio_dem_sar_lulc all true
+  - test_auth_configure_masks_and_clears_secrets:
+      Configures credentials, verifies masked hints (sec...877 pattern),
+      verifies raw secrets NOT in response, clears session, verifies
+      source != "session" after clear
+
+7.3 test_rasters.py (3 tests)
+  - test_dem_preset_and_geotiff_upload:
+      Mount St. Helens preset: erosion > 0, deposition > 0, dod_png base64
+      GeoTIFF upload: known 8x8 pixel erosion 5m = 32,000 m^3,
+      6x6 deposition 3m = 10,800 m^3 (within 50 tolerance)
+  - test_sar_preset_and_geotiff_upload:
+      Amazon flooding preset: drop area > 0, otsu threshold > 0
+      GeoTIFF upload: -10 dB drop region, drop area > 0.05 km^2
+  - test_lulc_preset_and_geotiff_upload:
+      Amazon deforestation preset: 0 < cohen_kappa <= 1.0,
+      transition matrix >= 2 classes
+      GeoTIFF upload: 12.5% changed (within 0.2 tolerance)
+
+7.4 test_stats_advanced.py (4 tests)
+  - test_sarima_with_missing_polar_night_gaps:
+      84 months with Dec/Jan gaps, n_missing > 0, 12 forecast steps,
+      first forecast date "2023-01", CI95 bounds valid, holdout RMSE >= 0
+  - test_bayesian_mcmc_robust_ar1_converges_on_positive_trend:
+      108 months, slope > 0.12, R-hat < 1.15, P(positive) > 0.90,
+      3 trace chains
+  - test_bayesian_mcmc_changepoint_model:
+      Hinge at t=4.0 years, slope_shift > 0.25, changepoint date not null
+  - test_extreme_value_gev_and_gpd:
+      Gumbel data, GEV: 6 return levels, 100-period > 2-period
+      GPD: >= 10 exceedance samples
+  - test_spatial_fdr_prunes_false_positives:
+      14x16 grid, FDR significant <= raw significant,
+      trend_png and fdr_png base64 data URIs
+
+================================================================================
+8. STATISTICAL ANALYSIS METHODS — COMPLETE LIST
+================================================================================
+
+8.1 Frontend Web Worker Methods (client-side)
+  1. Bootstrap Confidence Intervals
+     - Module: bootstrapCI
+     - B >= 2000 iterations
+     - Statistics: mean, median
+     - Alpha configurable (default 0.05)
+
+  2. Theil-Sen Estimator (Full Pairwise Slopes)
+     - Module: senSlopeExact
+     - O(n^2) exact pairwise slope computation
+     - Robust to outliers
+
+  3. Seasonal Mann-Kendall Trend Test
+     - Module: seasonalMannKendall
+     - Methods: standard, hamed_rao, tfpw
+     - Autocorrelation correction
+     - Season length configurable (default 12)
+
+  4. PCA / SVD Decomposition
+     - Module: pcaAnalysis
+     - Principal Component Analysis
+     - Data matrix input, optional labels
+
+  5. Pettitt Change-Point Detection
+     - Module: pettittChangePoint
+     - Non-parametric change point detection
+     - Optional dates input
+
+  6. Descriptive Summary Statistics
+     - Module: computeDescriptiveStats
+     - Mean, median, std, min, max, quartiles, etc.
+
+  7. Nonlinear Regression
+     - Module: nonlinearRegression
+     - Models: exponential, logarithmic, power, quadratic, logistic
+
+  8. Generalized Extreme Value (GEV) Fit
+     - Module: fitGEV
+     - Block maxima approach
+     - Configurable block size (default 12)
+
+  9. One-Way ANOVA
+     - Module: runOneWayAnova
+     - Analysis of variance across groups
+
+8.2 Backend Statistical Methods (server-side)
+  1. SARIMA / ARIMA State-Space Forecasting
+     - Service: forecast_service.py (run_sarima_forecast)
+     - Library: statsmodels SARIMAX
+     - Missing-gap support (NaN preserved in state-space)
+     - Auto order selection via AIC (8 candidate models)
+     - 95% and 80% prediction intervals
+     - Holdout backtest (RMSE, MAE, MAPE)
+     - Ljung-Box residual autocorrelation test
+     - Shapiro-Wilk normality test
+     - Seasonal decomposition (additive STL/classical)
+     - Model candidate table (order, seasonal_order, AIC, BIC)
+
+  2. Bayesian MCMC — Robust AR(1) Trend
+     - Service: bayesian_service.py (_run_robust_ar1_mcmc)
+     - Likelihood: Student-t (df=5) for robustness
+     - Covariance: exact irregular-gap AR(1) (rho^dt scaling)
+     - Covariates: linear trend + annual harmonic (sin/cos 2*pi*t)
+     - Sampler: Adaptive Random-Walk Metropolis-within-Gibbs
+     - Chains: 2-4 (default 3), draws 300-2500 (default 900),
+       burn_in 150-1200 (default 450)
+     - Diagnostics: split R-hat, ESS, mean acceptance rate
+     - Outputs: slope/decade, intercept, sigma, AR(1) rho,
+       Probability of Direction, posterior histogram, traces,
+       predictive trend with 50%/95% envelopes
+
+  3. Bayesian MCMC — Changepoint (Piecewise Hinge)
+     - Service: bayesian_service.py (_run_changepoint_mcmc)
+     - Model: Bayesian piecewise linear hinge regression
+     - Parameters: intercept, pre-shift slope, slope change (delta),
+       changepoint tau (bounded [0.12, 0.88] of series), sigma
+     - Sampler: Adaptive Metropolis-within-Gibbs
+     - Diagnostics: split R-hat on delta and tau, ESS
+     - Outputs: pre_slope, post_slope, slope_shift, changepoint date/index,
+       Probability of Direction (accelerating/decelerating),
+       posterior histogram, traces, predictive trend envelopes
+
+  4. Extreme Value Analysis — GEV Block Maxima
+     - Service: extreme_service.py (mode: gev_block_maxima)
+     - Distribution: Generalized Extreme Value (scipy genextreme)
+     - Method: Block maxima, configurable block size
+     - Adaptive chunking fallback for short series
+     - Goodness of fit: Kolmogorov-Smirnov test
+     - Family classification: Frechet (heavy-tailed) / Weibull (bounded) /
+       Gumbel (light-tailed) based on shape xi
+     - Empirical plotting positions: Gringorten
+     - Return levels: configurable periods (default 2,5,10,20,50,100)
+     - Bootstrap 95% CI for return levels (80 bootstrap samples)
+
+  5. Extreme Value Analysis — GPD Peaks-Over-Threshold
+     - Service: extreme_service.py (mode: gpd_pot)
+     - Distribution: Generalized Pareto (scipy genpareto, floc=0)
+     - Threshold: quantile-based (default 0.85, adaptive fallback 0.70)
+     - Exceedance rate per year
+     - Return levels with bootstrap 95% CI
+     - Goodness of fit: Kolmogorov-Smirnov test
+
+  6. Spatial False Discovery Rate (Spatial FDR)
+     - Service: spatial_fdr_service.py (run_spatial_fdr_analysis)
+     - Test: Vectorized per-cell Mann-Kendall (Wilks 2016 framework)
+     - Grid: (T, H, W) spatio-temporal cube
+     - Correction methods: Benjamini-Hochberg (BH), Benjamini-Yekutieli (BY),
+       Holm, Bonferroni
+     - Outputs: Z-scores, p-values, slopes/decade, q-values,
+       raw vs FDR-significant cells, false positives pruned,
+       % area significant, field significance, Wilks effective alpha,
+       min p-value, min q-value, max/min slope
+     - Visuals: base64 trend PNG + FDR mask PNG
+
+  7. Vectorized Mann-Kendall Trend Test
+     - Component of spatial_fdr_service.py
+     - Pairwise sign-difference S statistic
+     - Exact variance under no-ties
+     - Z-score and two-sided p-value via normal approximation
+     - OLS slope per decade with NaN-safe handling
+     - Minimum 5 valid observations per cell required
+
+================================================================================
+9. NASA DATA SOURCES & PROXY FEEDS
+================================================================================
+
+9.1 Frontend Connectors
+  - NASA POWER: Solar and meteorological data
+  - MODIS: Moderate Resolution Imaging Spectroradiometer
+  - GIBS: Global Imagery Browse Services (imagery)
+  - NOAA: National Oceanic and Atmospheric Administration
+  - USGS: United States Geological Survey
+  - CMR: Common Metadata Repository (granule discovery)
+
+9.2 Backend Live Feeds
+  - NASA CMR: Granule search (keyless public metadata)
+  - NASA EONET v3: Wildfire events (keyless live feed)
+  - NASA ASF: SAR granule search (keyless)
+  - NASA FIRMS: Active fire detections (requires free MAP_KEY)
+  - NASA AppEEARS: Point extraction tasks (requires Earthdata credentials)
+  - NASA Earthdata Login: Authenticated OPeNDAP/S3 access (optional)
+
+9.3 Data Provenance Tiers
+  - satellite_observation: Live NASA satellite data
+  - reanalysis_model: Reanalysis model data
+  - user_upload: User-uploaded NetCDF4/HDF5/GeoTIFF
+  - synthetic_demo: Labeled demonstration/benchmark data
+
+================================================================================
+10. FILE UPLOAD SUPPORT
+================================================================================
+
+10.1 Supported Formats
+  - NetCDF3 / NetCDF4 / HDF5 (.nc, .h5, .hdf5)
+  - GeoTIFF (.tif, .tiff)
+
+10.2 Upload Endpoints
+  - POST /api/v1/earthdata/netcdf/inspect
+  - POST /api/v1/earthdata/netcdf/extract
+  - POST /api/v1/rasters/dem-diff/upload
+  - POST /api/v1/rasters/sar-change/upload
+  - POST /api/v1/rasters/lulc-transitions/upload
+
+10.3 Constraints
+  - Max upload size: 35 MB (configurable via max_upload_bytes)
+  - Empty files rejected (HTTP 400)
+  - Oversized files rejected (HTTP 413)
+  - Thread-safe credential store for auth
+
+================================================================================
+11. SECURITY FEATURES
+================================================================================
+
+- CORS middleware with configurable origins + vercel.app regex
+- Session-only credential storage (no persistence to disk)
+- Secret masking in API responses (shows first 3 + last 3 chars)
+- Raw secrets never echoed in responses or logs
+- Upload size limits (35 MB)
+- Timeout configuration (25 seconds HTTP)
+- .env.example provided (no committed secrets)
+- Credentials can be cleared via /api/v1/auth/configure with clear_session=true
+
+================================================================================
+12. DEPLOYMENT
+================================================================================
+
+12.1 Docker (backend/Dockerfile)
+  - Base: python:3.12-slim
+  - System deps: libexpat1, libhdf5-dev, libnetcdf-dev
+  - Python deps: pip install -r requirements.txt
+  - Env: BACKEND_HOST=0.0.0.0, BACKEND_PORT=8000
+  - Command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+12.2 Docker Vercel (backend/Dockerfile.vercel)
+  - Base: python:3.12-slim
+  - Port: 80
+  - Env: PYTHONUNBUFFERED=1, PYTHONDONTWRITEBYTECODE=1
+
+12.3 Frontend (Vite)
+  - Dev server: port 3000
+  - Build: vite build
+  - API proxy: /api -> http://127.0.0.1:8000
+  - Vercel config: vercel.json
+
+12.4 Python Dependencies (requirements.txt)
+  fastapi, uvicorn, python-multipart, python-dotenv, pydantic,
+  numpy, pandas, scipy, statsmodels, scikit-learn, scikit-image,
+  xarray, netCDF4, h5netcdf, rasterio, tifffile, shapely, pillow,
+  earthaccess, requests, httpx, pytest
+
+================================================================================
+13. KEY DESIGN PATTERNS
+================================================================================
+
+- Layered architecture: routers -> services -> external APIs/libraries
+- Graceful degradation: live API -> keyless fallback -> synthetic demo
+- Transparent provenance: every response includes tier, source_name,
+  dataset_id, is_live, status_message
+- Thread-safe shared state: auth_store with Lock
+- Web Worker offloading: heavy stats on client-side worker with fallback
+- Base64 PNG previews: raster spatial outputs embedded as data URIs
+- Pydantic v2 schemas: validated request/response contracts
+- NaN-safe computations: missing data handling throughout stats pipeline
+
+================================================================================
+END OF CATALOG
+================================================================================

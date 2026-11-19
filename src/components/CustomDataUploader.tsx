@@ -1,0 +1,511 @@
+import React, { useState } from 'react';
+import { EarthVariable, HotspotRegion, ProvenanceTier, TimeSeriesPoint, VariableId } from '../types/earthScience';
+import { EARTH_VARIABLES, NASA_POWER_PARAM_MAP, detectCsvPrimaryVariable, extractCsvCoordinates, fetchLiveNasaPowerData, parseCustomCsv, parseCustomJson } from '../services/nasaData';
+import { connectorRegistry } from '../services/connectors';
+import { processTimeSeries } from '../services/statistics';
+import { 
+  UploadCloud, 
+  MapPin, 
+  FileSpreadsheet, 
+  Radio, 
+  Play, 
+  CheckCircle2, 
+  AlertCircle, 
+  RefreshCw,
+  Code
+} from 'lucide-react';
+
+interface CustomDataUploaderProps {
+  initialCoordinates?: [number, number];
+  onAnalyzeCustomData: (
+    region: HotspotRegion,
+    variable: EarthVariable,
+    points: TimeSeriesPoint[],
+    isLiveNasa: boolean,
+    rawCsvText?: string,
+    provenanceMeta?: { tier: ProvenanceTier; sourceLabel?: string; statusMessage?: string }
+  ) => void;
+}
+
+export const CustomDataUploader: React.FC<CustomDataUploaderProps> = ({
+  initialCoordinates,
+  onAnalyzeCustomData,
+}) => {
+  const [activeTab, setActiveTab] = useState<'coordinates' | 'csv'>('coordinates');
+
+  // Coordinates state (shared between NASA Coordinate Query & CSV Location)
+  const [latInput, setLatInput] = useState<string>(
+    initialCoordinates ? initialCoordinates[0].toFixed(2) : '40.71'
+  );
+  const [lonInput, setLonInput] = useState<string>(
+    initialCoordinates ? initialCoordinates[1].toFixed(2) : '-74.01'
+  );
+  const [selectedVarId, setSelectedVarId] = useState<VariableId>('temp_air');
+  const [isLoadingApi, setIsLoadingApi] = useState<boolean>(false);
+  const [apiFeedback, setApiFeedback] = useState<string | null>(null);
+
+  // CSV state
+  const [csvText, setCsvText] = useState<string>(
+`Date,Latitude,Longitude,Value
+1990-01,40.71,-74.01,12.4
+1990-02,40.71,-74.01,13.1
+1990-03,40.71,-74.01,14.2
+1990-04,40.71,-74.01,16.5
+1990-05,40.71,-74.01,19.8
+1990-06,40.71,-74.01,22.3
+1990-07,40.71,-74.01,25.6
+1990-08,40.71,-74.01,24.9
+1990-09,40.71,-74.01,21.5
+1990-10,40.71,-74.01,17.2
+1990-11,40.71,-74.01,14.1
+1990-12,40.71,-74.01,12.8
+2020-01,40.71,-74.01,14.1
+2020-02,40.71,-74.01,14.8
+2020-03,40.71,-74.01,15.9
+2020-04,40.71,-74.01,18.2
+2020-05,40.71,-74.01,21.5
+2020-06,40.71,-74.01,24.1
+2020-07,40.71,-74.01,27.5
+2020-08,40.71,-74.01,26.8
+2020-09,40.71,-74.01,23.4
+2020-10,40.71,-74.01,19.1
+2020-11,40.71,-74.01,15.8
+2020-12,40.71,-74.01,14.4`
+  );
+  const [customDatasetName, setCustomDatasetName] = useState<string>('Local Environmental Station');
+  const [csvError, setCsvError] = useState<string | null>(null);
+
+  // Coordinate presets
+  const presets = [
+    { name: 'New York City', lat: 40.71, lon: -74.01 },
+    { name: 'London, UK', lat: 51.51, lon: -0.13 },
+    { name: 'Tokyo, Japan', lat: 35.68, lon: 139.77 },
+    { name: 'Sahara (Tamanrasset)', lat: 22.78, lon: 5.52 },
+    { name: 'Great Barrier Reef', lat: -16.92, lon: 145.77 },
+  ];
+
+  // Shared coordinate validation helper
+  const parseCoordinates = (): { lat: number; lon: number } | string => {
+    const lat = parseFloat(latInput);
+    const lon = parseFloat(lonInput);
+
+    if (isNaN(lat) || lat < -90 || lat > 90) {
+      return 'Please enter a valid latitude between -90 and 90.';
+    }
+    if (isNaN(lon) || lon < -180 || lon > 180) {
+      return 'Please enter a valid longitude between -180 and 180.';
+    }
+    return { lat, lon };
+  };
+
+  // Handle Live NASA / Federated Connector API fetch
+  const handleFetchLiveNasa = async () => {
+    const parsedCoords = parseCoordinates();
+    if (typeof parsedCoords === 'string') {
+      setApiFeedback(parsedCoords);
+      return;
+    }
+    const { lat, lon } = parsedCoords;
+
+    setIsLoadingApi(true);
+    setApiFeedback(null);
+
+    try {
+      const targetVar = EARTH_VARIABLES.find(v => v.id === selectedVarId) || EARTH_VARIABLES[0];
+      const connector = connectorRegistry.getBestConnector(selectedVarId, lat, lon);
+
+      let points: TimeSeriesPoint[] = [];
+      let isLiveNasa = false;
+      let statusMessage = '';
+      let provenanceTier: ProvenanceTier = 'reanalysis_model';
+      let sourceLabel = 'NASA POWER';
+
+      if (connector?.capabilities.timeSeries) {
+        const res = await connector.fetchTimeSeries({ lat, lon, variableId: selectedVarId });
+        const validCount = res.points.filter(p => p.raw !== null).length;
+        if (validCount >= 24) {
+          points = res.points;
+          isLiveNasa = true;
+          statusMessage = res.statusMessage;
+          provenanceTier = res.provenance;
+          sourceLabel = res.sourceLabel;
+        }
+      }
+
+      if (points.length === 0) {
+        const fallback = await fetchLiveNasaPowerData(lat, lon, selectedVarId);
+        points = fallback.points;
+        isLiveNasa = fallback.isLiveNasa;
+        statusMessage = fallback.statusMessage;
+        provenanceTier = fallback.isLiveNasa ? 'reanalysis_model' : 'synthetic_demo';
+        sourceLabel = fallback.isLiveNasa ? 'NASA POWER' : 'HeraOculus Calibrated Fallback';
+      }
+
+      const customRegion: HotspotRegion = {
+        id: `coord_${lat.toFixed(2)}_${lon.toFixed(2)}`,
+        name: `Query Point (${lat >= 0 ? lat.toFixed(2) + '°N' : Math.abs(lat).toFixed(2) + '°S'}, ${lon >= 0 ? lon.toFixed(2) + '°E' : Math.abs(lon).toFixed(2) + '°W'})`,
+        countryOrOcean: 'Custom Coordinates',
+        coordinates: [lat, lon],
+        category: 'Urban',
+        description: `Direct Earth Science observation query via ${sourceLabel} for ${lat.toFixed(2)}°, ${lon.toFixed(2)}°`,
+        keyPhenomenon: 'Geographic Trend Exploration',
+        primaryVariable: selectedVarId,
+      };
+
+      onAnalyzeCustomData(customRegion, targetVar, points, isLiveNasa, undefined, {
+        tier: provenanceTier,
+        sourceLabel,
+        statusMessage,
+      });
+      setApiFeedback(statusMessage);
+    } catch (err: any) {
+      setApiFeedback(`Error retrieving NASA data: ${err.message || err}`);
+    } finally {
+      setIsLoadingApi(false);
+    }
+  };
+
+  // Handle CSV or JSON file upload
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      if (!text) return;
+      const cleanName = file.name.replace(/\.[^/.]+$/, '');
+      setCustomDatasetName(cleanName);
+
+      if (file.name.toLowerCase().endsWith('.json') || text.trim().startsWith('{') || text.trim().startsWith('[')) {
+        try {
+          const parsedJson = parseCustomJson(text);
+          const processed = processTimeSeries(parsedJson.points);
+          const varId = parsedJson.detectedVariable ?? selectedVarId;
+          const targetVar = EARTH_VARIABLES.find(v => v.id === varId) || EARTH_VARIABLES[0];
+          const coords: [number, number] = parsedJson.coordinates ?? [0, 0];
+          const customRegion: HotspotRegion = {
+            id: `csv_${Date.now()}`,
+            name: parsedJson.regionName || cleanName || 'User JSON Dataset',
+            countryOrOcean: parsedJson.coordinates ? 'JSON Station Series' : 'Uploaded JSON Series',
+            coordinates: coords,
+            hasCoordinates: Boolean(parsedJson.coordinates),
+            category: 'Agricultural',
+            description: 'User-imported JSON time series',
+            keyPhenomenon: 'Custom Time Series Significance Test',
+            primaryVariable: varId,
+          };
+          setCsvError(null);
+          onAnalyzeCustomData(customRegion, targetVar, processed, false, undefined, {
+            tier: 'user_upload',
+            sourceLabel: file.name,
+            statusMessage: `Loaded ${processed.length} observations from JSON upload (${file.name}).`,
+          });
+          return;
+        } catch (err: any) {
+          setCsvError(err.message || 'Failed to parse JSON upload');
+          return;
+        }
+      }
+
+      setCsvText(text);
+      const detectedVar = detectCsvPrimaryVariable(text);
+      if (detectedVar) {
+        setSelectedVarId(detectedVar);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // Process Custom CSV
+  const handleProcessCsv = () => {
+    setCsvError(null);
+
+    try {
+      const rawPoints = parseCustomCsv(csvText, selectedVarId);
+      const processed = processTimeSeries(rawPoints);
+      const targetVar = EARTH_VARIABLES.find(v => v.id === selectedVarId) || EARTH_VARIABLES[0];
+      const csvCoords = extractCsvCoordinates(csvText);
+      const hasCoordinates = csvCoords !== null;
+      const coords: [number, number] = csvCoords ?? [0, 0];
+
+      const customRegion: HotspotRegion = {
+        id: `csv_${Date.now()}`,
+        name: customDatasetName || 'User CSV Dataset',
+        countryOrOcean: hasCoordinates
+          ? `Station (${coords[0] >= 0 ? coords[0].toFixed(2) + '°N' : Math.abs(coords[0]).toFixed(2) + '°S'}, ${coords[1] >= 0 ? coords[1].toFixed(2) + '°E' : Math.abs(coords[1]).toFixed(2) + '°W'})`
+          : 'Uploaded Time Series',
+        coordinates: coords,
+        hasCoordinates,
+        category: 'Agricultural',
+        description: 'User-provided custom environmental observations',
+        keyPhenomenon: 'Custom Time Series Significance Test',
+        primaryVariable: selectedVarId,
+      };
+
+      onAnalyzeCustomData(customRegion, targetVar, processed, false, csvText);
+    } catch (err: any) {
+      setCsvError(err.message || 'Failed to parse CSV');
+    }
+  };
+
+  return (
+    <div className="max-w-7xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="bg-ink-900 rounded-2xl border border-ink-700/40 p-6 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <div className="flex items-center space-x-2">
+            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-gold-400 text-ink-950 flex items-center space-x-1">
+              <UploadCloud className="w-3 h-3" />
+              <span>Data Studio & API Hub</span>
+            </span>
+            <span className="text-xs text-silver-500">• Query Any Global Coordinates or Upload CSV</span>
+          </div>
+          <h2 className="text-2xl font-black text-silver-100 tracking-tight">
+            Analyze Custom Data & Global Coordinates
+          </h2>
+          <p className="text-xs sm:text-sm text-silver-300 max-w-2xl leading-relaxed">
+            Query live satellite data directly from the official NASA POWER API for any coordinate on Earth, or import your own field sensor CSV files to run Mann-Kendall significance tests.
+          </p>
+        </div>
+
+        {/* Tab Switcher */}
+        <div className="flex items-center p-1 bg-ink-950 rounded-xl border border-ink-700">
+          <button
+            onClick={() => setActiveTab('coordinates')}
+            className={`flex items-center space-x-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+              activeTab === 'coordinates'
+                ? 'bg-gold-400 text-silver-100 shadow-md shadow-silver-500/30'
+                : 'text-silver-500 hover:text-silver-100'
+            }`}
+          >
+            <MapPin className="w-3.5 h-3.5" />
+            <span>NASA Coordinates API</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('csv')}
+            className={`flex items-center space-x-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+              activeTab === 'csv'
+                ? 'bg-blue-600 text-silver-100 shadow-md shadow-blue-600/30'
+                : 'text-silver-500 hover:text-silver-100'
+            }`}
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span>Import CSV Time Series</span>
+          </button>
+        </div>
+      </div>
+
+      {/* TAB 1: COORDINATES LIVE QUERY */}
+      {activeTab === 'coordinates' && (
+        <div className="bg-ink-900/90 rounded-2xl border border-ink-700 p-6 shadow-xl space-y-6">
+          <div className="flex items-center justify-between pb-3 border-b border-ink-700">
+            <div>
+              <h3 className="text-base font-bold text-silver-100 flex items-center space-x-2">
+                <Radio className="w-4 h-4 text-silver-500" />
+                <span>Live NASA POWER API Query</span>
+              </h3>
+              <p className="text-xs text-silver-500">
+                Direct satellite & MERRA-2 meteorological database (1995–2024)
+              </p>
+            </div>
+            <span className="text-[11px] text-silver-500 bg-ink-800/80 px-2.5 py-1 rounded-lg border border-ink-700">
+              CORS-Enabled NASA Endpoint
+            </span>
+          </div>
+
+          {/* Quick Presets */}
+          <div className="space-y-1.5">
+            <span className="text-xs text-silver-500 font-semibold block">Quick Global Presets:</span>
+            <div className="flex flex-wrap gap-2">
+              {presets.map(p => (
+                <button
+                  key={p.name}
+                  onClick={() => {
+                    setLatInput(p.lat.toString());
+                    setLonInput(p.lon.toString());
+                  }}
+                  className="px-2.5 py-1 bg-ink-950 hover:bg-ink-800 text-silver-300 hover:text-silver-100 rounded-lg border border-ink-700 text-xs transition-colors"
+                >
+                  {p.name} ({p.lat}°, {p.lon}°)
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Coordinate Form */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+            <div>
+              <label className="text-xs text-silver-300 font-semibold block mb-1.5">
+                Latitude (-90 to +90)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="-90"
+                max="90"
+                value={latInput}
+                onChange={(e) => setLatInput(e.target.value)}
+                className="w-full px-3.5 py-2 bg-ink-950 border border-ink-700 rounded-xl text-xs text-silver-100 focus:outline-none focus:ring-1 focus:ring-gold-400"
+                placeholder="e.g. 40.71"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs text-silver-300 font-semibold block mb-1.5">
+                Longitude (-180 to +180)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="-180"
+                max="180"
+                value={lonInput}
+                onChange={(e) => setLonInput(e.target.value)}
+                className="w-full px-3.5 py-2 bg-ink-950 border border-ink-700 rounded-xl text-xs text-silver-100 focus:outline-none focus:ring-1 focus:ring-gold-400"
+                placeholder="e.g. -74.01"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs text-silver-300 font-semibold block mb-1.5">
+                Earth Science Variable
+              </label>
+              <select
+                value={selectedVarId}
+                onChange={(e) => setSelectedVarId(e.target.value as VariableId)}
+                className="w-full px-3.5 py-2 bg-ink-950 border border-ink-700 rounded-xl text-xs font-semibold text-silver-100 focus:outline-none focus:ring-1 focus:ring-gold-400"
+              >
+                {EARTH_VARIABLES.map(v => {
+                  const powerCode = NASA_POWER_PARAM_MAP[v.id];
+                  return (
+                    <option key={v.id} value={v.id}>
+                      {v.shortName} ({v.unit}) — {powerCode ? `Live NASA POWER: ${powerCode}` : 'Calibrated Fallback'}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          </div>
+
+          {/* Feedback & Actions */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-ink-700">
+            <div>
+              {apiFeedback && (
+                <div className="flex items-center space-x-2 text-xs text-silver-500">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>{apiFeedback}</span>
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={handleFetchLiveNasa}
+              disabled={isLoadingApi}
+              className="flex items-center space-x-2 px-6 py-2.5 bg-gold-400 hover:bg-gold-400 text-silver-100 font-bold text-xs rounded-xl shadow-lg shadow-silver-500/30 transition-all disabled:opacity-50"
+            >
+              {isLoadingApi ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Contacting NASA POWER API...</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4" />
+                  <span>Fetch & Analyze Coordinates</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: CSV UPLOADER */}
+      {activeTab === 'csv' && (
+        <div className="bg-ink-900/90 rounded-2xl border border-ink-700 p-6 shadow-xl space-y-6">
+          <div className="flex items-center justify-between pb-3 border-b border-ink-700">
+            <div>
+              <h3 className="text-base font-bold text-silver-100 flex items-center space-x-2">
+                <FileSpreadsheet className="w-4 h-4 text-gold-400" />
+                <span>Upload Custom Environmental CSV Data</span>
+              </h3>
+              <p className="text-xs text-silver-500">
+                Run Mann-Kendall, Sen's slope, and deseasonalization on your own time-series
+              </p>
+            </div>
+
+            <label className="cursor-pointer px-3.5 py-1.5 rounded-xl bg-ink-800 hover:bg-ink-700 text-xs font-semibold text-silver-100 border border-ink-700 transition-colors">
+              <span>Choose CSV / JSON File</span>
+              <input type="file" accept=".csv,.txt,.json" onChange={handleFileUpload} className="hidden" />
+            </label>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs text-silver-300 font-semibold block mb-1.5">
+                Dataset / Station Name
+              </label>
+              <input
+                type="text"
+                value={customDatasetName}
+                onChange={(e) => setCustomDatasetName(e.target.value)}
+                className="w-full px-3 py-2 bg-ink-950 border border-ink-700 rounded-xl text-xs text-silver-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                placeholder="e.g. Alpine Weather Station"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs text-silver-300 font-semibold block mb-1.5">
+                Target Variable Interpretation
+              </label>
+              <select
+                value={selectedVarId}
+                onChange={(e) => setSelectedVarId(e.target.value as VariableId)}
+                className="w-full px-3 py-2 bg-ink-950 border border-ink-700 rounded-xl text-xs text-silver-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                {EARTH_VARIABLES.map(v => (
+                  <option key={v.id} value={v.id}>
+                    {v.name} ({v.unit})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs text-silver-300 font-semibold block mb-1.5">
+              CSV Content (Paste or Edit Below):
+            </label>
+            <textarea
+              rows={8}
+              value={csvText}
+              onChange={(e) => setCsvText(e.target.value)}
+              className="w-full p-3 bg-ink-950 border border-ink-700 rounded-xl text-xs text-silver-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+            <p className="text-[11px] text-silver-300 mt-1">
+              Format: Date (YYYY-MM or YYYY-MM-DD), Value (optional Latitude, Longitude columns). Comma, semicolon, or tab delimited.
+            </p>
+          </div>
+
+          {csvError && (
+            <div className="p-3 bg-ink-800/60 border border-ink-700 rounded-xl text-xs text-gold-300 flex items-center space-x-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{csvError}</span>
+            </div>
+          )}
+
+          <div className="flex justify-end pt-2 border-t border-ink-700">
+            <button
+              onClick={handleProcessCsv}
+              className="flex items-center space-x-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-silver-100 font-bold text-xs rounded-xl shadow-lg shadow-blue-600/30 transition-all"
+            >
+              <Play className="w-4 h-4" />
+              <span>Process Custom CSV & Calculate Significance</span>
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

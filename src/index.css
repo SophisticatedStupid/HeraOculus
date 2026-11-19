@@ -1,0 +1,140 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink-950: #000000;
+  --color-ink-900: #0A0A0A;
+  --color-ink-800: #141414;
+  --color-ink-700: #1E1E1E;
+  --color-line: #2E2E2E;
+
+  --color-silver-100: #F2F2F2;
+  --color-silver-300: #C0C0C0;
+  --color-silver-500: #8A8A8A;
+  --color-silver-600: #5E5E5E;
+
+  --color-gold-300: #F0D58A;
+  --color-gold-400: #D4AF37;
+  --color-gold-500: #B8922A;
+  --color-gold-700: #7A5F1A;
+
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--color-ink-950);
+    color: var(--color-silver-100);
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: var(--font-display);
+  }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-gold-400);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-ink-950);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-ink-700);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-gold-400);
+}
+
+/* Leaflet theme */
+.leaflet-container {
+  background-color: var(--color-ink-950) !important;
+  font-family: var(--font-sans) !important;
+}
+
+.leaflet-container .leaflet-tile {
+  max-width: none !important;
+  max-height: none !important;
+}
+
+.leaflet-popup-content-wrapper {
+  background-color: var(--color-ink-900) !important;
+  color: var(--color-silver-100) !important;
+  border: 1px solid var(--color-ink-700) !important;
+  border-radius: 0.75rem !important;
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.7) !important;
+}
+
+.leaflet-popup-tip {
+  background-color: var(--color-ink-900) !important;
+}
+
+/* Iris significance gauge */
+@keyframes iris-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+.iris-gauge-ring {
+  transition: stroke-dashoffset 0.6s ease;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .iris-gauge-significant .iris-gauge-glow {
+    animation: iris-pulse 2.8s ease-in-out infinite;
+  }
+}
+
+/* Flat surface utility */
+.flat-surface {
+  background-color: var(--color-ink-900);
+  border: 1px solid var(--color-line);
+  border-radius: 0.75rem;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+
+::selection {
+  background-color: var(--color-gold-400);
+  color: var(--color-ink-950);
+}
+
+.leaflet-bar a {
+  background-color: var(--color-ink-900) !important;
+  color: var(--color-silver-100) !important;
+  border-color: var(--color-ink-700) !important;
+}
+.leaflet-bar a:hover {
+  background-color: var(--color-ink-800) !important;
+  color: var(--color-gold-400) !important;
+}
+
+.leaflet-tile-pane { filter: grayscale(1) invert(1) contrast(0.9) brightness(0.8); }
