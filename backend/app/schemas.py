@@ -185,6 +185,7 @@ class SarChangePresetRequest(BaseModel):
     speckle_filter: Literal["none", "lee", "mean"] = "lee"
     window_size: int = Field(default=5, ge=3, le=11)
     threshold_db: float = Field(default=3.0, ge=0.5, le=15.0)
+    threshold_mode: Literal["fixed", "otsu"] = "fixed"
     pixel_size_m: float = Field(default=20.0, ge=1.0, le=1000.0)
 
 

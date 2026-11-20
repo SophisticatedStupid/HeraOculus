@@ -449,8 +449,10 @@ export interface SarChangeResponse {
   label: string;
   speckle_filter: string;
   window_size: number;
-  threshold_db: number;
+  threshold_mode: 'fixed' | 'otsu';
+  user_threshold_db: number;
   otsu_suggested_threshold_db: number;
+  applied_threshold_db: number;
   summary: {
     total_area_km2: number;
     backscatter_drop_area_km2: number;
@@ -491,6 +493,8 @@ export interface LulcTransitionResponse {
   label: string;
   overall_persistence_pct: number;
   pct_changed: number;
+  excluded_pixels: number;
+  excluded_pct: number;
   cohen_kappa: number;
   classes: Array<{
     class_id: number;
@@ -698,12 +702,18 @@ export const phase2Api = {
     speckle_filter?: 'none' | 'lee' | 'mean';
     window_size?: number;
     threshold_db?: number;
+    threshold_mode?: 'fixed' | 'otsu';
     pixel_size_m?: number;
   }) => postJson<SarChangeResponse, typeof payload>('/api/v1/rasters/sar-change', payload, 25000),
   runSarUpload: (
     beforeFile: File,
     afterFile: File,
-    opts: { speckle_filter: 'none' | 'lee' | 'mean'; window_size: number; threshold_db: number }
+    opts: {
+      speckle_filter: 'none' | 'lee' | 'mean';
+      window_size: number;
+      threshold_db: number;
+      threshold_mode: 'fixed' | 'otsu';
+    }
   ) => {
     const fd = new FormData();
     fd.append('before_file', beforeFile);
@@ -711,6 +721,7 @@ export const phase2Api = {
     fd.append('speckle_filter', opts.speckle_filter);
     fd.append('window_size', String(opts.window_size));
     fd.append('threshold_db', String(opts.threshold_db));
+    fd.append('threshold_mode', opts.threshold_mode);
     return requestApi<SarChangeResponse>('/api/v1/rasters/sar-change/upload', { method: 'POST', body: fd }, 40000);
   },
   searchAsfSar: (payload: {

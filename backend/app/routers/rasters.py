@@ -57,6 +57,7 @@ def sar_change_preset(payload: SarChangePresetRequest) -> dict:
         speckle_filter=payload.speckle_filter,
         window_size=payload.window_size,
         threshold_db=payload.threshold_db,
+        threshold_mode=payload.threshold_mode,
         pixel_size_m=payload.pixel_size_m,
     )
 
@@ -68,11 +69,13 @@ async def sar_change_upload(
     speckle_filter: str = Form(default="lee"),
     window_size: int = Form(default=5),
     threshold_db: float = Form(default=3.0),
+    threshold_mode: str = Form(default="fixed"),
     pixel_grid_only: bool = Form(default=False),
 ) -> dict:
     b1, n1 = await read_checked_upload(before_file)
     b2, n2 = await read_checked_upload(after_file)
     filt = speckle_filter if speckle_filter in {"none", "lee", "mean"} else "lee"
+    mode = threshold_mode if threshold_mode in {"fixed", "otsu"} else "fixed"
     try:
         return compute_sar_change_from_files(
             b1,
@@ -82,6 +85,7 @@ async def sar_change_upload(
             speckle_filter=filt,  # type: ignore[arg-type]
             window_size=window_size,
             threshold_db=threshold_db,
+            threshold_mode=mode,  # type: ignore[arg-type]
             pixel_grid_only=pixel_grid_only,
         )
     except Exception as exc:

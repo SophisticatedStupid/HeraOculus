@@ -44,6 +44,7 @@ export const RasterChangePanel: React.FC = () => {
   const [speckleFilter, setSpeckleFilter] = useState<'lee' | 'mean' | 'none'>('lee');
   const [windowSize, setWindowSize] = useState(5);
   const [thresholdDb, setThresholdDb] = useState(3.0);
+  const [thresholdMode, setThresholdMode] = useState<'fixed' | 'otsu'>('fixed');
   const [sarFiles, setSarFiles] = useState<{ before: File | null; after: File | null }>({
     before: null,
     after: null,
@@ -83,6 +84,7 @@ export const RasterChangePanel: React.FC = () => {
               speckle_filter: speckleFilter,
               window_size: windowSize,
               threshold_db: thresholdDb,
+              threshold_mode: thresholdMode,
             })
           );
         } else {
@@ -92,6 +94,7 @@ export const RasterChangePanel: React.FC = () => {
               speckle_filter: speckleFilter,
               window_size: windowSize,
               threshold_db: thresholdDb,
+              threshold_mode: thresholdMode,
             })
           );
         }
@@ -131,7 +134,7 @@ export const RasterChangePanel: React.FC = () => {
   useEffect(() => {
     void runCurrent(tab);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, demScenario, sarScenario, lulcScenario]);
+  }, [tab, demScenario, sarScenario, lulcScenario, speckleFilter, windowSize, thresholdDb, thresholdMode]);
 
   const histogramOptions = {
     responsive: true,
@@ -355,6 +358,18 @@ export const RasterChangePanel: React.FC = () => {
             </label>
 
             <label className="text-[11px] text-silver-300 space-y-1">
+              <span className="block text-silver-500 font-semibold">Threshold Mode</span>
+              <select
+                value={thresholdMode}
+                onChange={(e) => setThresholdMode(e.target.value as 'fixed' | 'otsu')}
+                className="w-full px-2.5 py-1.5 rounded-lg bg-ink-950 border border-ink-700 text-xs text-silver-100"
+              >
+                <option value="fixed">Fixed (user-specified)</option>
+                <option value="otsu">Otsu (auto-calculated)</option>
+              </select>
+            </label>
+
+            <label className="text-[11px] text-silver-300 space-y-1">
               <span className="block text-silver-500 font-semibold">Log-Ratio Cutoff (dB)</span>
               <input
                 type="number"
@@ -412,9 +427,9 @@ export const RasterChangePanel: React.FC = () => {
                 />
                 <MetricTile label="% Footprint Changed" value={`${sarRes.summary.pct_changed}%`} />
                 <MetricTile
-                  label="Otsu Auto-Threshold"
-                  value={`${sarRes.otsu_suggested_threshold_db} dB`}
-                  sub={`Applied: ±${sarRes.threshold_db} dB`}
+                  label="Threshold"
+                  value={sarRes.threshold_mode === "fixed" ? `Fixed (±${sarRes.user_threshold_db} dB)` : `Otsu (${sarRes.otsu_suggested_threshold_db} dB)`}
+                  sub={`Applied: ±${sarRes.applied_threshold_db} dB`}
                   accent="text-gold-300"
                 />
                 <MetricTile
@@ -429,7 +444,7 @@ export const RasterChangePanel: React.FC = () => {
                   { title: `Before σ0 (${sarRes.speckle_filter.toUpperCase()} filtered)`, src: sarRes.images.before_png },
                   { title: 'After σ0 (dB backscatter)', src: sarRes.images.after_png },
                   { title: 'Log-Ratio 10·log10(I2/I1) dB', src: sarRes.images.log_ratio_png },
-                  { title: `Change Mask (±${sarRes.threshold_db} dB)`, src: sarRes.images.change_mask_png },
+                  { title: `Change Mask (±${sarRes.applied_threshold_db} dB)`, src: sarRes.images.change_mask_png },
                 ].map((panel) => (
                   <div key={panel.title} className="bg-ink-900/90 border border-ink-700 rounded-xl p-2.5 space-y-1.5">
                     <div className="text-[11px] font-bold text-silver-300">{panel.title}</div>
@@ -601,7 +616,7 @@ export const RasterChangePanel: React.FC = () => {
           {lulcRes && (
             <>
               <ProvenanceBanner provenance={lulcRes.provenance} />
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <MetricTile
                   label="Cohen's Kappa (κ)"
                   value={lulcRes.cohen_kappa.toFixed(3)}
@@ -616,6 +631,12 @@ export const RasterChangePanel: React.FC = () => {
                   label="Converted Footprint"
                   value={`${lulcRes.pct_changed}%`}
                   accent="text-gold-300"
+                />
+                <MetricTile
+                  label="Excluded Nodata"
+                  value={`${lulcRes.excluded_pixels.toLocaleString()} px`}
+                  sub={`${lulcRes.excluded_pct}% of footprint`}
+                  accent={lulcRes.excluded_pixels > 0 ? 'text-silver-300' : 'text-silver-500'}
                 />
               </div>
 

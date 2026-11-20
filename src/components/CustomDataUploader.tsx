@@ -122,6 +122,13 @@ export const CustomDataUploader: React.FC<CustomDataUploaderProps> = ({
 
       if (connector?.capabilities.timeSeries) {
         const res = await connector.fetchTimeSeries({ lat, lon, variableId: selectedVarId });
+        if (res.unavailable) {
+          // Connector explicitly reports no geographically appropriate station.
+          // Surface the clear unavailable status instead of silently substituting
+          // a distant US station or a NASA POWER fallback.
+          setApiFeedback(res.statusMessage);
+          return;
+        }
         const validCount = res.points.filter(p => p.raw !== null).length;
         if (validCount >= 24) {
           points = res.points;

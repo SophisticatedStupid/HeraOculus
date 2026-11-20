@@ -11,6 +11,8 @@ import {
   RefreshCw,
   Upload,
   FlaskConical,
+  Waves,
+  CopyIcon,
   type LucideIcon,
 } from 'lucide-react';
 import { SignificanceBadge } from './SignificanceBadge';
@@ -22,6 +24,7 @@ interface StatsSummaryCardProps {
 
 const PROVENANCE_ICONS: Record<ProvenanceTier, LucideIcon> = {
   satellite_observation: Satellite,
+  in_situ_gauge: Waves,
   reanalysis_model: RefreshCw,
   user_upload: Upload,
   synthetic_demo: FlaskConical,
@@ -29,6 +32,7 @@ const PROVENANCE_ICONS: Record<ProvenanceTier, LucideIcon> = {
 
 const PROVENANCE_COLORS: Record<ProvenanceTier, string> = {
   satellite_observation: 'text-silver-500',
+  in_situ_gauge: 'text-cyan-400',
   reanalysis_model: 'text-gold-400',
   user_upload: 'text-gold-300',
   synthetic_demo: 'text-silver-600',
@@ -125,10 +129,27 @@ export const StatsSummaryCard: React.FC<StatsSummaryCardProps> = ({ stats }) => 
 
           <div className="pt-2 border-t border-ink-700 flex items-center justify-between text-[11px]">
             <span className="text-silver-500">Baseline window</span>
-            <span className="tabular-nums text-silver-300">
+            <span className="tabular-nums text-silver-300 text-right">
               {stats.startDate} → {stats.endDate}
             </span>
           </div>
+          {(stats.requestedRange || stats.actualRange) && (
+            <div className="pt-2 border-t border-ink-700 flex items-center justify-between text-[11px]">
+              <span className="text-silver-500">Time range</span>
+              <span className="tabular-nums text-silver-300 text-right">
+                {stats.requestedRange ? `Req: ${stats.requestedRange}` : ''}
+                {stats.actualRange ? `Actual: ${stats.actualRange}` : ''}
+              </span>
+            </div>
+          )}
+          {stats.latestValidObservation && (
+            <div className="pt-2 border-t border-ink-700 flex items-center justify-between text-[11px]">
+              <span className="text-silver-500">Latest valid observation</span>
+              <span className="tabular-nums text-silver-300 text-right">
+                {stats.latestValidObservation}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Mann-Kendall */}

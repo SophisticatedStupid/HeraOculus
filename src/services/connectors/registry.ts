@@ -41,12 +41,13 @@ class ConnectorRegistry {
     if (candidates.length === 0) return undefined;
     if (candidates.length === 1) return candidates[0];
 
-    // Sort by priority: satellite_observation first, then timeSeries capability
+    // Sort by priority: satellite_observation > in_situ_gauge > reanalysis_model
     const provenanceOrder: Record<string, number> = {
       satellite_observation: 0,
-      reanalysis_model: 1,
-      user_upload: 2,
-      synthetic_demo: 3,
+      in_situ_gauge: 1,
+      reanalysis_model: 2,
+      user_upload: 3,
+      synthetic_demo: 4,
     };
 
     candidates.sort((a, b) => {

@@ -58,7 +58,9 @@ The optional backend exposes:
 - Multi-chain Bayesian MCMC for robust AR(1) trends and change points.
 - GEV block-maxima and GPD peaks-over-threshold extreme-value analysis.
 - Vectorized gridded Mann-Kendall and BH, BY, Holm, or Bonferroni spatial FDR.
-- DEM differencing, SAR log-ratio change detection, LULC transitions, and ASF
+- DEM differencing, fixed or Otsu-thresholded SAR log-ratio change detection,
+  nodata-aware LULC transitions with georeferenced pixel-area accounting,
+  and ASF
   catalog search.
 - NASA FIRMS/EONET fire queries and Earthdata CMR, AppEEARS, atmospheric
   profile, trace-gas, and NetCDF4/HDF5 workflows.

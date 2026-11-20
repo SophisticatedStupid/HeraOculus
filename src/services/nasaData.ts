@@ -694,8 +694,8 @@ function getRegionVariableBaseline(region: HotspotRegion, varId: VariableId): Ba
 
 /**
  * NASA POWER monthly parameters mapped 1:1 to matching units/definitions in EARTH_VARIABLES.
- * Variables absent from NASA POWER monthly (ndvi, soil_moist m³/m³, tropospheric-only ozone)
- * are intentionally unmapped so they never silently substitute temperature (T2M).
+ * Variables absent from NASA POWER monthly (ndvi, soil_moist m³/m³, tropospheric-only ozone, sst)
+ * are intentionally unmapped so they never silently substitute temperature (T2M or TS).
  */
 export const NASA_POWER_PARAM_MAP: Partial<Record<VariableId, string>> = {
   temp_air: 'T2M',          // Temperature at 2 Meters (°C)
@@ -715,7 +715,6 @@ export const NASA_POWER_PARAM_MAP: Partial<Record<VariableId, string>> = {
   ozone_total: 'TO3',       // Total Column Ozone (DU)
   soil_moist_top: 'GWETTOP',// Top Soil Wetness (0-1)
   soil_moist_prof: 'GWETPROF',// Profile Soil Wetness (0-1)
-  sst: 'TS',                // Sea Surface Temp (°C)
 };
 
 function buildCalibratedFallback(
@@ -740,7 +739,14 @@ function buildCalibratedFallback(
 
 const livePowerCache = new Map<
   string,
-  { points: TimeSeriesPoint[]; isLiveNasa: boolean; statusMessage: string }
+  {
+    points: TimeSeriesPoint[];
+    isLiveNasa: boolean;
+    statusMessage: string;
+    requestedRange?: string;
+    actualRange?: string;
+    latestValidObservation?: string;
+  }
 >();
 
 /**
@@ -750,8 +756,16 @@ const livePowerCache = new Map<
 export async function fetchLiveNasaPowerData(
   lat: number,
   lon: number,
-  variableId: VariableId
-): Promise<{ points: TimeSeriesPoint[]; isLiveNasa: boolean; statusMessage: string }> {
+  variableId: VariableId,
+  options?: { startYear?: number; endYear?: number }
+): Promise<{
+  points: TimeSeriesPoint[];
+  isLiveNasa: boolean;
+  statusMessage: string;
+  requestedRange?: string;
+  actualRange?: string;
+  latestValidObservation?: string;
+}> {
   const nasaParam = NASA_POWER_PARAM_MAP[variableId];
   const targetVar = EARTH_VARIABLES.find(v => v.id === variableId) || EARTH_VARIABLES[0];
 
@@ -763,7 +777,14 @@ export async function fetchLiveNasaPowerData(
     };
   }
 
-  const cacheKey = `${lat.toFixed(2)}_${lon.toFixed(2)}_${variableId}`;
+  // Default historical start year is 1995 (MERRA-2 era). Users can override via options.
+  const startYear = options?.startYear ?? 1995;
+  // Dynamic end year defaults to the current calendar year; never silently capped at 2024.
+  const currentYear = new Date().getFullYear();
+  const endYear = options?.endYear ?? currentYear;
+
+  // Cache key includes the requested date range so different ranges never collide.
+  const cacheKey = `${lat.toFixed(2)}_${lon.toFixed(2)}_${variableId}_${startYear}_${endYear}`;
   const cached = livePowerCache.get(cacheKey);
   if (cached) {
     return {
@@ -772,8 +793,6 @@ export async function fetchLiveNasaPowerData(
     };
   }
 
-  const startYear = 1995;
-  const endYear = 2024;
   const url = `https://power.larc.nasa.gov/api/temporal/monthly/point?parameters=${nasaParam}&community=RE&longitude=${lon.toFixed(2)}&latitude=${lat.toFixed(2)}&start=${startYear}&end=${endYear}&format=JSON`;
 
   try {
@@ -796,6 +815,9 @@ export async function fetchLiveNasaPowerData(
 
     const rawPoints: { date: string; value: number | null }[] = [];
     let validCount = 0;
+    let actualMinYear = endYear;
+    let actualMaxYear = startYear;
+    let latestValidObservation: string | null = null;
 
     // Keys are in format "YYYYMM" (e.g. "199501") or "199513" (13 is annual summary)
     for (const key of Object.keys(parameterData)) {
@@ -805,7 +827,7 @@ export async function fetchLiveNasaPowerData(
         const yearNum = parseInt(yearStr, 10);
         const monthNum = parseInt(monthStr, 10);
 
-        // Exclude month 13 (annual mean)
+        // Exclude month 13 (annual mean) - annual summary keys are not monthly observations
         if (monthNum >= 1 && monthNum <= 12) {
           let val = parameterData[key];
           // NASA fill value is -999 (polar night / missing data): preserve explicit null slot
@@ -814,6 +836,8 @@ export async function fetchLiveNasaPowerData(
               date: `${yearStr}-${monthStr}`,
               value: null,
             });
+            if (yearNum < actualMinYear) actualMinYear = yearNum;
+            if (yearNum > actualMaxYear) actualMaxYear = yearNum;
             continue;
           }
           // PRECTOTCORR, EVLAND, and PRECSNO are returned in mm/day; convert to mm/month
@@ -826,6 +850,12 @@ export async function fetchLiveNasaPowerData(
             date: `${yearStr}-${monthStr}`,
             value: +val.toFixed(2),
           });
+          if (yearNum < actualMinYear) actualMinYear = yearNum;
+          if (yearNum > actualMaxYear) actualMaxYear = yearNum;
+          const dateStr = `${yearStr}-${monthStr}`;
+          if (!latestValidObservation || dateStr > latestValidObservation) {
+            latestValidObservation = dateStr;
+          }
         }
       }
     }
@@ -834,12 +864,19 @@ export async function fetchLiveNasaPowerData(
       throw new Error('Insufficient valid points returned from live NASA API');
     }
 
+    // Ensure chronological sorting
     rawPoints.sort((a, b) => a.date.localeCompare(b.date));
+
+    const requestedRange = `${startYear}-${endYear}`;
+    const actualRange = `${actualMinYear}-${actualMaxYear}`;
 
     const result = {
       points: processTimeSeries(rawPoints),
       isLiveNasa: true,
-      statusMessage: `Successfully retrieved ${validCount} valid months (${rawPoints.length - validCount} missing/polar-night slots) of NASA POWER (${nasaParam})!`,
+      statusMessage: `Successfully retrieved ${validCount} valid months (${rawPoints.length - validCount} missing/polar-night slots) of NASA POWER (${nasaParam}) from ${requestedRange}; data available through ${actualMaxYear}.`,
+      requestedRange,
+      actualRange,
+      latestValidObservation: latestValidObservation || undefined,
     };
     livePowerCache.set(cacheKey, {
       ...result,

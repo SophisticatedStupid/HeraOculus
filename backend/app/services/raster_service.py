@@ -566,6 +566,7 @@ def compute_sar_change_detection(
     speckle_filter: Literal["none", "lee", "mean"] = "lee",
     window_size: int = 5,
     threshold_db: float = 3.0,
+    threshold_mode: Literal["fixed", "otsu"] = "fixed",
     pixel_size_m: float = 20.0,
     pixel_areas_m2: Optional[np.ndarray] = None,
     pixel_area_meta: Optional[dict] = None,
@@ -573,9 +574,21 @@ def compute_sar_change_detection(
 ) -> dict:
     """Compute SAR log-ratio change detection with Lee speckle filtering & Otsu threshold.
 
-    For user-uploaded GeoTIFFs, per-pixel areas in m² may be supplied via ``pixel_areas_m2``;
-    otherwise each pixel is assumed to have area ``pixel_size_m**2`` (metres).
+    Parameters
+    ----------
+    threshold_mode : {"fixed", "otsu"}
+        "fixed"  — apply the user-supplied ``threshold_db``.
+        "otsu"   — compute Otsu threshold from |log10 ratio| and apply it.
+        Defaults to ``"fixed"`` for backward compatibility.
     """
+
+    if threshold_mode not in ("fixed", "otsu"):
+        raise ValueError(f"Invalid threshold_mode '{threshold_mode}'; expected 'fixed' or 'otsu'.")
+
+    if threshold_mode == "otsu":
+        if threshold_db <= 0:
+            raise ValueError("threshold_db must be positive when using otsu mode.")
+
     if img_before is not None and img_after is not None:
         i1, i2 = img_before, img_after
         label = "Uploaded Dual SAR GeoTIFF Backscatter Pair"
@@ -602,13 +615,29 @@ def compute_sar_change_detection(
     log_ratio_db = 10.0 * np.log10(np.maximum(f2, eps) / np.maximum(f1, eps))
     abs_change = np.abs(log_ratio_db)
 
+    # Compute Otsu threshold (guarded against degenerate histograms)
     try:
         otsu_db = float(threshold_otsu(abs_change))
+        # A meaningful Otsu cut must be finite and strictly positive; flat / degenerate
+        # histograms (e.g. constant scenes) yield 0.0 which would flag every pixel, so
+        # fall back to the user-supplied fixed threshold in that case.
+        if not np.isfinite(otsu_db) or otsu_db <= 0.0:
+            otsu_db = float(threshold_db)
     except Exception:
-        otsu_db = threshold_db
+        otsu_db = float(threshold_db)
 
-    changed_drop = log_ratio_db <= -threshold_db
-    changed_gain = log_ratio_db >= threshold_db
+    # ------------------------------------------------------------------
+    # Select the applied threshold based on the requested mode
+    # ------------------------------------------------------------------
+    if threshold_mode == "otsu":
+        applied_threshold = otsu_db
+    else:
+        applied_threshold = threshold_db
+
+    # Build gain / loss masks from the signed log-ratio; direction is still
+    # determined from the signed log_ratio_db, not from the absolute values.
+    changed_drop = log_ratio_db <= -applied_threshold
+    changed_gain = log_ratio_db >= applied_threshold
     mask_arr = np.where(changed_gain, 1.0, np.where(changed_drop, -1.0, 0.0))
 
     if pixel_areas_m2 is not None:
@@ -638,8 +667,10 @@ def compute_sar_change_detection(
         "label": label,
         "speckle_filter": speckle_filter,
         "window_size": window_size,
-        "threshold_db": threshold_db,
-        "otsu_suggested_threshold_db": round(otsu_db, 3),
+        "threshold_mode": threshold_mode,
+        "user_threshold_db": threshold_db,
+        "otsu_suggested_threshold_db": round(float(otsu_db), 3),
+        "applied_threshold_db": round(float(applied_threshold), 3),
         "summary": {
             "total_area_km2": round(total_area_km2, 3),
             "backscatter_drop_area_km2": round(drop_area_km2, 3),
@@ -670,6 +701,7 @@ def compute_sar_change_from_files(
     speckle_filter: Literal["none", "lee", "mean"] = "lee",
     window_size: int = 5,
     threshold_db: float = 3.0,
+    threshold_mode: Literal["fixed", "otsu"] = "fixed",
     pixel_grid_only: bool = False,
 ) -> dict:
     i1, m1 = _read_raster_bytes(before_bytes, before_name)
@@ -684,6 +716,7 @@ def compute_sar_change_from_files(
         speckle_filter=speckle_filter,
         window_size=window_size,
         threshold_db=threshold_db,
+        threshold_mode=threshold_mode,
         pixel_areas_m2=areas_m2,
         pixel_area_meta=pixel_area_meta,
         is_upload=True,
@@ -817,17 +850,40 @@ def _synthetic_lulc_pair(scenario: str) -> tuple[np.ndarray, np.ndarray, str]:
     return t1, t2, label
 
 
-def _render_categorical_png(arr: np.ndarray, class_ids: list[int]) -> str:
+NODATA_COLOR = (148, 163, 184)  # neutral grey for invalid / excluded LULC pixels
+
+
+def _render_categorical_png(
+    arr: np.ndarray,
+    class_ids: list[int],
+    *,
+    valid: np.ndarray | None = None,
+    nodata_color: tuple[int, int, int] = NODATA_COLOR,
+) -> str:
+    """Render categorical raster.
+
+    ``valid`` (bool, same shape as ``arr``) controls which pixels are rendered. Invalid
+    pixels are rendered with ``nodata_color`` (neutral grey) and are never treated as a
+    real land-cover class. When ``valid is None``, all pixels are rendered by class value.
+    """
     H, W = arr.shape
     rgba = np.zeros((H, W, 4), dtype=np.uint8)
-    rgba[:, :, 3] = 245
+    if valid is None:
+        rgba[:, :, 3] = 245
+    else:
+        rgba[~valid, :] = (nodata_color[0], nodata_color[1], nodata_color[2], 245)
     fallback_colors = [(56, 189, 248), (168, 85, 247), (249, 115, 22), (34, 197, 94), (244, 63, 94), (148, 163, 184)]
     for idx, cid in enumerate(class_ids):
         color = LULC_PALETTE.get(int(cid), fallback_colors[idx % len(fallback_colors)])
         mask = arr == cid
-        rgba[mask, 0] = color[0]
-        rgba[mask, 1] = color[1]
-        rgba[mask, 2] = color[2]
+        if valid is None:
+            rgba[mask, 0] = color[0]
+            rgba[mask, 1] = color[1]
+            rgba[mask, 2] = color[2]
+        else:
+            rgba[(mask & valid), 0] = color[0]
+            rgba[(mask & valid), 1] = color[1]
+            rgba[(mask & valid), 2] = color[2]
     return _encode_png(rgba)
 
 
@@ -846,12 +902,18 @@ def compute_lulc_transitions(
     Transition areas are computed from actual per-pixel areas in m^2 (via ``pixel_areas_m2``) when
     supplied for uploaded rasters; otherwise a constant square-pixel assumption of
     ``pixel_area_km2`` (km^2 per pixel) is used.
+
+    Nodata / NaN / Inf pixels are excluded from all calculations. The validity mask is defined
+    by the intersection of valid pixels in both the before and after rasters.
     """
     if lulc_before is not None and lulc_after is not None:
         t1_raw, t2_raw = lulc_before, lulc_after
+        # Validity: both before and after must be finite (not NaN / Inf / nodata)
         valid = np.isfinite(t1_raw) & np.isfinite(t2_raw)
         t1 = np.rint(t1_raw[valid]).astype(int)
         t2 = np.rint(t2_raw[valid]).astype(int)
+        # For rendering: keep original integer values for valid pixels; invalid pixels keep whatever
+        # (they will be masked out by `valid` in rendering)
         map1 = np.rint(np.nan_to_num(t1_raw, nan=0)).astype(int)
         map2 = np.rint(np.nan_to_num(t2_raw, nan=0)).astype(int)
         label = "Uploaded Classified LULC GeoTIFF Pair"
@@ -859,12 +921,49 @@ def compute_lulc_transitions(
         msg = f"Evaluated pixel-by-pixel LULC transitions across {len(t1)} valid cells."
     else:
         map1, map2, label = _synthetic_lulc_pair(scenario)
+        valid = np.ones_like(map1, dtype=bool)
         t1 = map1.ravel()
         t2 = map2.ravel()
         tier = "synthetic_demo"
         msg = f"MCD12Q1 benchmark scenario ({label}); upload two classified GeoTIFF rasters to compute custom transitions."
 
     class_ids = sorted(int(c) for c in np.unique(np.concatenate([t1, t2])))[:12]
+
+    provenance = {
+        "tier": tier,
+        "source_name": label,
+        "dataset_id": scenario.upper() if not is_upload else "USER_LULC_PAIR",
+        "is_live": False,
+        "status_message": msg,
+    }
+    if pixel_area_meta is not None:
+        provenance["pixel_area_meta"] = pixel_area_meta
+
+    total_pixels = int(valid.size)
+    valid_pairs = int(t1.size)
+    excluded_pixels = int(total_pixels - valid_pairs)
+    excluded_pct = round(100.0 * excluded_pixels / max(1, total_pixels), 2)
+
+    # Graceful all-invalid case: report exclusion, no transitions, never treat nodata as a class.
+    if valid_pairs == 0:
+        change_map_empty = np.zeros(map1.shape, dtype=float)
+        return {
+            "provenance": provenance,
+            "label": label,
+            "overall_persistence_pct": 0.0,
+            "pct_changed": 0.0,
+            "cohen_kappa": 0.0,
+            "classes": [],
+            "transition_matrix": {"labels": [], "counts": [], "area_km2": []},
+            "excluded_pixels": excluded_pixels,
+            "excluded_pct": excluded_pct,
+            "images": {
+                "before_png": _render_categorical_png(map1, [], valid=valid),
+                "after_png": _render_categorical_png(map2, [], valid=valid),
+                "change_mask_png": _render_scalar_png(change_map_empty, "mask"),
+            },
+        }
+
     if len(class_ids) < 2:
         raise ValueError("LULC transition analysis requires at least 2 distinct land cover classes.")
 
@@ -881,21 +980,15 @@ def compute_lulc_transitions(
         cell_area_m2 = np.full(len(t1), float(pixel_area_km2) * 1_000_000.0, dtype=float)
 
     # Per-class before/after area (m^2) and net change (m^2 -> km^2)
-    class_area_m2 = {}
     class_before_m2 = {}
     class_after_m2 = {}
     for i, cid in enumerate(class_ids):
-        before_mask = (t1 == cid) if len(t1) == len(map1.ravel()) else None
-        # Using flat valid arrays
-        before_mask = t1 == cid
-        after_mask = t2 == cid
+        before_mask = (t1 == cid)
+        after_mask = (t2 == cid)
         before_m2 = float(np.sum(cell_area_m2[before_mask]))
         after_m2 = float(np.sum(cell_area_m2[after_mask]))
         class_before_m2[cid] = before_m2
         class_after_m2[cid] = after_m2
-        net_m2 = after_m2 - before_m2
-        # store net for summary via class_summary
-        class_area_m2[cid] = net_m2
 
     # Transition areas (m^2) per (before, after) pair
     transition_m2 = np.zeros((len(class_ids), len(class_ids)), dtype=float)
@@ -915,7 +1008,7 @@ def compute_lulc_transitions(
         net_px = after_px - before_px
         before_m2 = class_before_m2[cid]
         after_m2 = class_after_m2[cid]
-        net_m2 = class_area_m2[cid]
+        net_m2 = after_m2 - before_m2
         class_summary.append(
             {
                 "class_id": cid,
@@ -928,7 +1021,8 @@ def compute_lulc_transitions(
             }
         )
 
-    change_map = np.where(map1 != map2, -1.0, 0.0)
+    # Change map: only on valid paired pixels
+    change_map = np.where(valid & (map1 != map2), -1.0, 0.0)
 
     provenance = {
         "tier": tier,
@@ -939,6 +1033,10 @@ def compute_lulc_transitions(
     }
     if pixel_area_meta is not None:
         provenance["pixel_area_meta"] = pixel_area_meta
+
+    total_pixels = int(valid.size)
+    excluded_pixels = int(total_pixels - total)
+    excluded_pct = round(100.0 * excluded_pixels / max(1, total_pixels), 2)
 
     return {
         "provenance": provenance,
@@ -954,9 +1052,11 @@ def compute_lulc_transitions(
                 [round(float(transition_m2[i, j]) / 1_000_000.0, 2) for j in range(len(class_ids))] for i in range(len(class_ids))
             ],
         },
+        "excluded_pixels": excluded_pixels,
+        "excluded_pct": excluded_pct,
         "images": {
-            "before_png": _render_categorical_png(map1, class_ids),
-            "after_png": _render_categorical_png(map2, class_ids),
+            "before_png": _render_categorical_png(map1, class_ids, valid=valid),
+            "after_png": _render_categorical_png(map2, class_ids, valid=valid),
             "change_mask_png": _render_scalar_png(change_map, "mask"),
         },
     }

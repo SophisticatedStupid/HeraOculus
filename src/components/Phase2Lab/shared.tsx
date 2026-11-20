@@ -20,6 +20,7 @@ import {
   RefreshCw,
   Upload,
   FlaskConical,
+  Waves,
   type LucideIcon,
 } from 'lucide-react';
 import { PROVENANCE_META, ProvenanceTier } from '../../types/earthScience';
@@ -61,6 +62,7 @@ export const CHART_LEGEND = { labels: { color: CHART_AXIS_LABEL, font: { size: 1
 
 const PROVENANCE_ICONS: Record<ProvenanceTier, LucideIcon> = {
   satellite_observation: Satellite,
+  in_situ_gauge: Waves,
   reanalysis_model: RefreshCw,
   user_upload: Upload,
   synthetic_demo: FlaskConical,
@@ -70,6 +72,10 @@ const PROVENANCE_ACCENT: Record<ProvenanceTier, { shell: string; label: string }
   satellite_observation: {
     shell: 'bg-ink-900/80 border-silver-500/35 text-silver-100',
     label: 'text-silver-500',
+  },
+  in_situ_gauge: {
+    shell: 'bg-ink-900/80 border-cyan-400/35 text-silver-100',
+    label: 'text-cyan-400',
   },
   reanalysis_model: {
     shell: 'bg-ink-900/80 border-gold-400/35 text-silver-100',

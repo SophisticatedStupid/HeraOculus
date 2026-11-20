@@ -343,7 +343,8 @@ D:\Geo-Iris-main\Geo-Iris-main\
   - _synthetic_sar_pair()              Synthetic SAR pairs (3 scenarios)
   - compute_sar_change_detection()     SAR log-ratio change detection:
       - Speckle filters: none, Lee, mean
-      - Otsu suggested threshold
+      - Fixed user threshold or Otsu auto-threshold mode
+      - Reports user, Otsu-suggested, and applied thresholds
       - Backscatter drop/gain area (km^2)
       - Base64 PNG previews
   - compute_sar_change_from_files()    Uploaded GeoTIFF SAR pair
@@ -353,6 +354,9 @@ D:\Geo-Iris-main\Geo-Iris-main\
   - compute_lulc_transitions()         LULK transition matrix:
       - KxK confusion matrix, Cohen's Kappa, overall persistence
       - Per-class before/after %, net change, persistence
+      - Nodata/NaN/Inf pixels excluded from valid paired analysis
+      - Excluded pixel count and percentage reported to the API/UI
+      - Georeferenced pixel-area metadata for uploaded rasters
       - Base64 PNG previews: before, after, change mask
   - compute_lulc_from_files()          Uploaded classified GeoTIFF pair
 

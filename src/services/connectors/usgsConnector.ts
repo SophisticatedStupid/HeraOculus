@@ -8,13 +8,28 @@ import type {
   ConnectorFetchOptions,
   ConnectorFetchResult,
   VariableId,
+  StationMetadata,
 } from './types';
+import { haversineDistance } from './types';
 import { processTimeSeries } from '../statistics';
 
 const BASE_URL = 'https://waterservices.usgs.gov/nwis';
 
 /** Cubic feet per second to cubic meters per second conversion factor */
 const CFS_TO_CMS = 0.0283168466;
+
+/**
+ * Maximum acceptable great-circle distance (km) between the query point and
+ * a streamflow gauge for its monthly mean discharge to be considered a valid
+ * local measurement. Beyond this threshold the connector returns an explicit
+ * "no geographically appropriate station" status instead of silently
+ * substituting a distant US station.
+ *
+ * 500 km is roughly the limit at which river discharge remains meaningfully
+ * correlated within the same basin; beyond that, different hydrologic regimes
+ * dominate.
+ */
+export const MAX_STATION_DISTANCE_KM = 500;
 
 /** Curated USGS NWIS Streamflow Gauge Stations */
 const GAUGE_SITES = [
@@ -30,25 +45,39 @@ const GAUGE_SITES = [
   { id: '02236000', name: 'St. Johns River near De Land, FL', lat: 29.008, lon: -81.383 },
 ];
 
-/** Haversine great-circle distance in km */
-function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
+interface GaugeSite {
+  id: string;
+  name: string;
+  lat: number;
+  lon: number;
 }
 
-/** Find nearest USGS river gauge station */
-function findNearestSite(lat: number, lon: number) {
-  let nearest = GAUGE_SITES[0];
+interface NearestSiteResult {
+  site: GaugeSite;
+  distanceKm: number;
+}
+
+/** Validate a coordinate pair as a real geographic location. */
+export function isValidCoordinate(lat: number, lon: number): boolean {
+  return (
+    Number.isFinite(lat) &&
+    Number.isFinite(lon) &&
+    lat >= -90 && lat <= 90 &&
+    lon >= -180 && lon <= 180
+  );
+}
+
+/**
+ * Find the nearest USGS streamflow gauge to the given coordinates, or null when
+ * no station lies within {@link MAX_STATION_DISTANCE_KM}. Never silently
+ * returns a distant US station for a query outside that radius.
+ */
+export function findNearestSite(lat: number, lon: number): NearestSiteResult | null {
+  if (!isValidCoordinate(lat, lon)) return null;
+
+  let nearest: GaugeSite | null = null;
   let minDist = Infinity;
+
   for (const s of GAUGE_SITES) {
     const dist = haversineDistance(lat, lon, s.lat, s.lon);
     if (dist < minDist) {
@@ -56,7 +85,9 @@ function findNearestSite(lat: number, lon: number) {
       nearest = s;
     }
   }
-  return nearest;
+
+  if (!nearest || minDist > MAX_STATION_DISTANCE_KM) return null;
+  return { site: nearest, distanceKm: minDist };
 }
 
 const usgsCapabilities: ConnectorCapabilities = {
@@ -68,6 +99,22 @@ const usgsCapabilities: ConnectorCapabilities = {
 };
 
 const SUPPORTED_VARIABLES: VariableId[] = ['streamflow'];
+
+/** Build the unavailable result returned when no nearby streamflow gauge exists. */
+function unavailableResult(lat: number, lon: number, startYear: number, endYear: number): ConnectorFetchResult {
+  return {
+    points: [],
+    provenance: 'in_situ_gauge',
+    sourceLabel: 'USGS Water',
+    unavailable: true,
+    requestedRange: `${startYear}-${endYear}`,
+    statusMessage:
+      `No USGS streamflow gauge within ${MAX_STATION_DISTANCE_KM} km of ` +
+      `(${lat.toFixed(3)}°, ${lon.toFixed(3)}°). Monthly mean streamflow ` +
+      `is not available as a local in-situ measurement for this location. ` +
+      `Try a riverine region near a US gauge, or select a different variable.`,
+  };
+}
 
 /** Parse USGS tab-delimited RDB monthly statistics text into YYYY-MM -> mean m^3/s */
 function parseUsgsRdbMonthly(rdbText: string): { date: string; value: number }[] {
@@ -132,7 +179,7 @@ function parseUsgsRdbMonthly(rdbText: string): { date: string; value: number }[]
   }
   allPoints.sort((a, b) => a.date.localeCompare(b.date));
 
-  // Focus on the modern 1995-present satellite era when available so charts align cleanly
+  // Focus on the modern 1995-present era when available so charts align cleanly
   const modernPoints = allPoints.filter(p => parseInt(p.date.slice(0, 4), 10) >= 1995);
   return modernPoints.length >= 24 ? modernPoints : allPoints;
 }
@@ -146,7 +193,7 @@ export const usgsConnector: EarthDataConnector = {
   baseUrl: BASE_URL,
   capabilities: usgsCapabilities,
   supportedVariables: SUPPORTED_VARIABLES,
-  provenanceType: 'satellite_observation', // Actually in-situ gauges
+  provenanceType: 'in_situ_gauge',
   requiresAuth: false,
   requiresProxy: false,
 
@@ -155,18 +202,35 @@ export const usgsConnector: EarthDataConnector = {
   },
 
   async fetchTimeSeries(options: ConnectorFetchOptions): Promise<ConnectorFetchResult> {
-    const { lat, lon, variableId } = options;
+    const { lat, lon, variableId, startYear = 1995, endYear = new Date().getFullYear() } = options;
 
     if (variableId !== 'streamflow') {
       return {
         points: [],
-        provenance: 'satellite_observation',
+        provenance: 'in_situ_gauge',
         sourceLabel: 'USGS Water',
         statusMessage: `Variable "${variableId}" is not supported by USGS Water connector.`,
       };
     }
 
-    const site = findNearestSite(lat, lon);
+    if (!isValidCoordinate(lat, lon)) {
+      return {
+        points: [],
+        provenance: 'in_situ_gauge',
+        sourceLabel: 'USGS Water',
+        unavailable: true,
+        requestedRange: `${startYear}-${endYear}`,
+        statusMessage:
+          `Invalid query coordinates (${lat}, ${lon}). Provide a latitude in ` +
+          `[-90, 90] and longitude in [-180, 180].`,
+      };
+    }
+
+    const nearest = findNearestSite(lat, lon);
+    if (!nearest) {
+      return unavailableResult(lat, lon, startYear, endYear);
+    }
+    const { site, distanceKm: distKm } = nearest;
 
     // Note: USGS /nwis/stat/ supports format=rdb (tab-separated) and rejects format=json with 400
     const url =
@@ -191,26 +255,85 @@ export const usgsConnector: EarthDataConnector = {
       const rdbText = await response.text();
       const rawPoints = parseUsgsRdbMonthly(rdbText);
 
-      if (rawPoints.length < 12) {
-        throw new Error(`Insufficient USGS data: only ${rawPoints.length} monthly points`);
+      if (rawPoints.length === 0) {
+        return {
+          points: [],
+          provenance: 'in_situ_gauge',
+          sourceLabel: 'USGS Water',
+          unavailable: true,
+          requestedRange: `${startYear}-${endYear}`,
+          station: buildStationMetadata(site, distKm, rawPoints, startYear, endYear),
+          statusMessage:
+            `USGS streamflow gauge ${site.name} (${site.id}) returned no valid ` +
+            `monthly observations in ${startYear}-${endYear}.`,
+        };
       }
 
-      const distKm = haversineDistance(lat, lon, site.lat, site.lon);
+      if (rawPoints.length < 12) {
+        return {
+          points: [],
+          provenance: 'in_situ_gauge',
+          sourceLabel: 'USGS Water',
+          unavailable: true,
+          requestedRange: `${startYear}-${endYear}`,
+          station: buildStationMetadata(site, distKm, rawPoints, startYear, endYear),
+          statusMessage:
+            `Insufficient USGS data from ${site.name} (${site.id}): ` +
+            `only ${rawPoints.length} monthly points. At least 12 are required.`,
+        };
+      }
+
+      const actualStart = rawPoints[0].date;
+      const actualEnd = rawPoints[rawPoints.length - 1].date;
+      const latestValidObservation = actualEnd;
 
       return {
         points: processTimeSeries(rawPoints),
-        provenance: 'satellite_observation',
+        provenance: 'in_situ_gauge',
         sourceLabel: `USGS (${site.name})`,
-        statusMessage: `Retrieved ${rawPoints.length} months of streamflow data from ${site.name} (${distKm.toFixed(0)} km from query point).`,
+        statusMessage:
+          `Retrieved ${rawPoints.length} months of streamflow data from ${site.name} ` +
+          `(${site.id}, ${distKm.toFixed(0)} km from query point).`,
+        station: buildStationMetadata(site, distKm, rawPoints, startYear, endYear),
+        requestedRange: `${startYear}-${endYear}`,
+        actualRange: `${actualStart.slice(0, 4)}-${actualEnd.slice(0, 4)}`,
+        latestValidObservation,
       };
     } catch (err) {
       console.warn(`USGS Water connector error:`, err);
       return {
         points: [],
-        provenance: 'satellite_observation',
+        provenance: 'in_situ_gauge',
         sourceLabel: 'USGS Water',
+        requestedRange: `${startYear}-${endYear}`,
         statusMessage: `USGS request failed: ${err instanceof Error ? err.message : String(err)}`,
       };
     }
   },
 };
+
+/**
+ * Build the scientific metadata object describing the selected streamflow gauge
+ * and the observations actually returned.
+ */
+function buildStationMetadata(
+  site: GaugeSite,
+  distKm: number,
+  rawPoints: { date: string; value: number }[],
+  startYear: number,
+  endYear: number,
+): StationMetadata {
+  const dates = rawPoints.map(p => p.date).sort();
+  const obsStart = dates.length ? dates[0].slice(0, 4) : String(startYear);
+  const obsEnd = dates.length ? dates[dates.length - 1].slice(0, 4) : String(endYear);
+  return {
+    stationId: site.id,
+    stationName: site.name,
+    stationCoordinates: [site.lat, site.lon],
+    distanceKm: +distKm.toFixed(1),
+    measurementType: 'Streamflow gauge',
+    observationPeriod: `${obsStart}-${obsEnd}`,
+    units: 'm³/s',
+    sourceAgency: 'USGS NWIS',
+  };
+}

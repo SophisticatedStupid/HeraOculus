@@ -36,7 +36,6 @@ export const POWER_PARAM_MAP: Partial<Record<VariableId, string>> = {
   ozone_total: 'TO3',          // Total Column Ozone (DU)
   soil_moist_top: 'GWETTOP',   // Top Soil Wetness (0-1)
   soil_moist_prof: 'GWETPROF', // Profile Soil Wetness (0-1)
-  sst: 'TS',                   // Sea Surface Temp uses Earth Skin Temp for ocean points
 };
 
 /** Parameters that are in mm/day and must be converted to mm/month */
@@ -79,7 +78,12 @@ export const powerConnector: EarthDataConnector = {
   },
 
   async fetchTimeSeries(options: ConnectorFetchOptions): Promise<ConnectorFetchResult> {
-    const { lat, lon, variableId, startYear = 1995, endYear = 2024 } = options;
+    const { lat, lon, variableId } = options;
+    // Default historical start year is 1995 (MERRA-2 era); users may override via options.
+    const startYear = options.startYear ?? 1995;
+    // Default end year is the current calendar year; never silently capped at 2024.
+    const currentYear = new Date().getFullYear();
+    const endYear = options.endYear ?? currentYear;
     const nasaParam = POWER_PARAM_MAP[variableId];
 
     if (!nasaParam) {
@@ -91,7 +95,7 @@ export const powerConnector: EarthDataConnector = {
       };
     }
 
-    // Check cache
+    // Check cache — cache key includes the requested date range so different ranges never collide.
     const cacheKey = `${lat.toFixed(2)}_${lon.toFixed(2)}_${variableId}_${startYear}_${endYear}`;
     const cached = powerCache.get(cacheKey);
     if (cached) {
@@ -131,6 +135,9 @@ export const powerConnector: EarthDataConnector = {
 
       const rawPoints: { date: string; value: number | null }[] = [];
       let validCount = 0;
+      let actualMinYear = endYear;
+      let actualMaxYear = startYear;
+      let latestValidObservation: string | null = null;
 
       for (const key of Object.keys(parameterData)) {
         if (key.length !== 6) continue;
@@ -140,7 +147,7 @@ export const powerConnector: EarthDataConnector = {
         const yearNum = parseInt(yearStr, 10);
         const monthNum = parseInt(monthStr, 10);
 
-        // Skip month 13 (annual summary)
+        // Skip month 13 (annual summary) — annual summary keys are not monthly observations.
         if (monthNum < 1 || monthNum > 12) continue;
 
         let val: number = parameterData[key];
@@ -152,6 +159,8 @@ export const powerConnector: EarthDataConnector = {
             date: `${yearStr}-${monthStr}`,
             value: null,
           });
+          if (yearNum < actualMinYear) actualMinYear = yearNum;
+          if (yearNum > actualMaxYear) actualMaxYear = yearNum;
           continue;
         }
 
@@ -165,19 +174,32 @@ export const powerConnector: EarthDataConnector = {
           date: `${yearStr}-${monthStr}`,
           value: +val.toFixed(2),
         });
+        if (yearNum < actualMinYear) actualMinYear = yearNum;
+        if (yearNum > actualMaxYear) actualMaxYear = yearNum;
+        const dateStr = `${yearStr}-${monthStr}`;
+        if (!latestValidObservation || dateStr > latestValidObservation) {
+          latestValidObservation = dateStr;
+        }
       }
 
       if (validCount < 24) {
         throw new Error(`Insufficient valid data points (${validCount}) from NASA POWER`);
       }
 
+      // Ensure chronological sorting
       rawPoints.sort((a, b) => a.date.localeCompare(b.date));
+
+      const requestedRange = `${startYear}-${endYear}`;
+      const actualRange = `${actualMinYear}-${actualMaxYear}`;
 
       const result: ConnectorFetchResult = {
         points: processTimeSeries(rawPoints),
         provenance: 'reanalysis_model',
         sourceLabel: `NASA POWER (${nasaParam})`,
-        statusMessage: `Successfully retrieved ${validCount} valid months (${rawPoints.length - validCount} missing/polar-night slots preserved) of NASA POWER (${nasaParam}) data.`,
+        statusMessage: `Successfully retrieved ${validCount} valid months (${rawPoints.length - validCount} missing/polar-night slots preserved) of NASA POWER (${nasaParam}) from ${requestedRange}; data available through ${actualMaxYear}.`,
+        requestedRange,
+        actualRange,
+        latestValidObservation: latestValidObservation || undefined,
       };
 
       // Cache the result

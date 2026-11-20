@@ -61,6 +61,10 @@ export const App: React.FC = () => {
   const [provenanceTier, setProvenanceTier] = useState<ProvenanceTier>('reanalysis_model');
   const [provenanceSource, setProvenanceSource] = useState<string>('NASA POWER MERRA-2');
   const [statusMessage, setStatusMessage] = useState<string | undefined>(undefined);
+  // Time-range metadata for the currently displayed series
+  const [requestedRange, setRequestedRange] = useState<string | undefined>(undefined);
+  const [actualRange, setActualRange] = useState<string | undefined>(undefined);
+  const [latestValidObservation, setLatestValidObservation] = useState<string | undefined>(undefined);
   const [phase2Handoff, setPhase2Handoff] = useState<Phase2SeriesHandoff | null>(null);
   const liveQueryIdRef = useRef<number>(0);
   const section1Ref = useRef<HTMLElement | null>(null);
@@ -129,10 +133,15 @@ export const App: React.FC = () => {
       provenanceSource,
       statusMessage,
     };
-  }, [activePoints, selectedVariable, selectedRegion, provenanceTier, provenanceSource, statusMessage]);
+  }, [activePoints, selectedVariable, selectedRegion, provenanceTier, provenanceSource, statusMessage, requestedRange, actualRange]);
 
   // Fetch live connector data (or calibrated fallback) for coordinates with race guard
-  const loadCoordinateData = async (lat: number, lon: number, variableId: VariableId) => {
+  const loadCoordinateData = async (
+    lat: number,
+    lon: number,
+    variableId: VariableId,
+    options?: { startYear?: number; endYear?: number }
+  ) => {
     const queryId = ++liveQueryIdRef.current;
 
     const connector = connectorRegistry.getBestConnector(variableId, lat, lon);
@@ -146,14 +155,30 @@ export const App: React.FC = () => {
       // Check connector registry (supports POWER, ORNL MODIS, NOAA Tides, USGS Water)
       if (connector?.capabilities.timeSeries) {
         try {
-          const res = await connector.fetchTimeSeries({ lat, lon, variableId });
+          const res = await connector.fetchTimeSeries({ lat, lon, variableId, ...options });
           if (queryId !== liveQueryIdRef.current) return;
+          if (res.unavailable) {
+            // No geographically appropriate station exists — surface the clear
+            // unavailable status instead of silently substituting distant data.
+            setCustomPoints([]);
+            setIsLiveNasa(false);
+            setProvenanceTier(res.provenance);
+            setProvenanceSource(res.sourceLabel || connector.name);
+            setStatusMessage(res.statusMessage);
+            if (res.requestedRange) setRequestedRange(res.requestedRange);
+            if (res.actualRange) setActualRange(res.actualRange);
+            if (res.latestValidObservation) setLatestValidObservation(res.latestValidObservation);
+            return;
+          }
           if (res.points.length >= 24) {
             setCustomPoints(res.points);
             setIsLiveNasa(true);
             setProvenanceTier(res.provenance);
             setProvenanceSource(res.sourceLabel || connector.name);
             setStatusMessage(res.statusMessage);
+            if (res.requestedRange) setRequestedRange(res.requestedRange);
+            if (res.actualRange) setActualRange(res.actualRange);
+            if (res.latestValidObservation) setLatestValidObservation(res.latestValidObservation);
             return;
           }
         } catch (err) {
@@ -162,19 +187,18 @@ export const App: React.FC = () => {
       }
 
       // Direct NASA POWER API / calibrated fallback
-      const { points, isLiveNasa: isLive } = await fetchLiveNasaPowerData(lat, lon, variableId);
+      const res = await fetchLiveNasaPowerData(lat, lon, variableId, options);
       if (queryId !== liveQueryIdRef.current) return;
-      setCustomPoints(points);
-      setIsLiveNasa(isLive);
-      setProvenanceTier(isLive ? 'reanalysis_model' : 'synthetic_demo');
+      setCustomPoints(res.points);
+      setIsLiveNasa(res.isLiveNasa);
+      setProvenanceTier(res.isLiveNasa ? 'reanalysis_model' : 'synthetic_demo');
       setProvenanceSource(
-        isLive ? 'NASA POWER MERRA-2 Reanalysis' : 'Calibrated Demonstration Series'
+        res.isLiveNasa ? 'NASA POWER MERRA-2 Reanalysis' : 'Calibrated Demonstration Series'
       );
-      setStatusMessage(
-        isLive
-          ? `Retrieved live monthly climatology (${points.length} records).`
-          : 'Live NASA endpoint unavailable; showing calibrated demonstration dataset.'
-      );
+      setStatusMessage(res.statusMessage);
+      if (res.requestedRange) setRequestedRange(res.requestedRange);
+      if (res.actualRange) setActualRange(res.actualRange);
+      if (res.latestValidObservation) setLatestValidObservation(res.latestValidObservation);
     } finally {
       if (queryId === liveQueryIdRef.current) {
         stopLoadingFeed();
@@ -208,6 +232,9 @@ export const App: React.FC = () => {
     setProvenanceTier('synthetic_demo');
     setProvenanceSource('Calibrated Demonstration Series');
     setStatusMessage(undefined);
+    setRequestedRange(undefined);
+    setActualRange(undefined);
+    setLatestValidObservation(undefined);
 
     // Auto-select the region's primary variable if available
     const primary = EARTH_VARIABLES.find(v => v.id === region.primaryVariable);
@@ -237,6 +264,9 @@ export const App: React.FC = () => {
     };
 
     setSelectedRegion(customRegion);
+    setRequestedRange(undefined);
+    setActualRange(undefined);
+    setLatestValidObservation(undefined);
     await loadCoordinateData(lat, lon, selectedVariable.id);
   };
 

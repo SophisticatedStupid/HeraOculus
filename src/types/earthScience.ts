@@ -30,7 +30,8 @@ export type VariableCategory = 'Atmosphere' | 'Land' | 'Hydrosphere' | 'Biospher
 export type MeasurementType = 'Satellite Instrument' | 'Global Assimilation Model' | 'Combined Reanalysis' | 'In-Situ Gauge Network';
 
 export type ProvenanceTier =
-  | 'satellite_observation' // ORNL MODIS, NOAA, USGS real-time
+  | 'satellite_observation' // ORNL MODIS, satellite imagery
+  | 'in_situ_gauge'         // NOAA tide gauges, USGS streamflow, in-situ sensors
   | 'reanalysis_model'      // NASA POWER (MERRA-2/GLDAS)
   | 'user_upload'           // CSV/JSON uploaded by user
   | 'synthetic_demo';       // Calibrated model fallback data
@@ -47,7 +48,14 @@ export const PROVENANCE_META: Record<ProvenanceTier, {
     shortLabel: 'SAT OBS',
     icon: '🛰️',
     colorClass: 'text-silver-500',
-    description: 'Direct satellite or in-situ instrument measurements (ORNL MODIS, NOAA gauges, USGS streamflow)',
+    description: 'Direct satellite instrument measurements (ORNL MODIS, satellite imagery)',
+  },
+  in_situ_gauge: {
+    label: 'In-Situ Gauge',
+    shortLabel: 'IN-SITU',
+    icon: '🌊',
+    colorClass: 'text-cyan-400',
+    description: 'Ground- or water-based gauge measurements (NOAA tide gauges, USGS streamflow, in-situ sensors)',
   },
   reanalysis_model: {
     label: 'NASA Model / Reanalysis',
@@ -165,6 +173,14 @@ export interface TrendAnalysisResult {
   provenanceSource?: string;
   statusMessage?: string;
   missingCount?: number;
+
+  // Time range metadata from the data source
+  /** Requested date range, e.g. "1995-2026" */
+  requestedRange?: string;
+  /** Actual date range returned by the API, e.g. "1995-2025" */
+  actualRange?: string;
+  /** Most recent month with a valid observation, e.g. "2025-11" */
+  latestValidObservation?: string;
 }
 
 // ── Connector Registry Types ──────────────────────────────────────────
@@ -186,11 +202,41 @@ export interface ConnectorFetchOptions {
   parameter?: string; // connector-specific parameter override
 }
 
+/** Scientific metadata describing the physical station behind a measurement */
+export interface StationMetadata {
+  /** Station / gauge identifier, e.g. "8518750" */
+  stationId: string;
+  /** Human-readable station name */
+  stationName: string;
+  /** Station coordinates [lat, lon] */
+  stationCoordinates: [number, number];
+  /** Great-circle distance from the query point in km */
+  distanceKm: number;
+  /** Measurement type, e.g. "Tide gauge", "Streamflow gauge" */
+  measurementType: string;
+  /** Observation period covered, e.g. "2000-2024" */
+  observationPeriod: string;
+  /** Units of the returned values, e.g. "m", "m³/s" */
+  units: string;
+  /** Source agency, e.g. "NOAA CO-OPS", "USGS NWIS" */
+  sourceAgency: string;
+}
+
 export interface ConnectorFetchResult {
   points: TimeSeriesPoint[];
   provenance: ProvenanceTier;
   sourceLabel: string;
   statusMessage: string;
+  /** Scientific metadata about the measurement station, when applicable */
+  station?: StationMetadata;
+  /** Marks a result where no geographically appropriate station was found */
+  unavailable?: boolean;
+  /** Requested date range, e.g. "1995-2026" */
+  requestedRange?: string;
+  /** Actual date range returned by the API, e.g. "1995-2025" */
+  actualRange?: string;
+  /** Most recent month with a valid observation, e.g. "2025-11" */
+  latestValidObservation?: string;
 }
 
 export interface EarthDataConnector {

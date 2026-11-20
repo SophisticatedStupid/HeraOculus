@@ -13,6 +13,7 @@ export type {
   ConnectorFetchOptions,
   ConnectorFetchResult,
   EarthDataConnector,
+  StationMetadata,
 } from '../../types/earthScience';
 
 export { PROVENANCE_META } from '../../types/earthScience';
