@@ -1,251 +1,280 @@
-# HERAOCULUS
+# Geo-Iris
 
-HERAOCULUS (also called Geo-Iris in the source code) is an interactive Earth
-science change-detection and significance platform. It helps students,
-researchers, and citizen scientists explore environmental time series,
-understand their provenance, and distinguish persistent trends from seasonal
-or short-lived variability.
+Earth observation analytics platform: trend detection, changepoint analysis, extreme-value statistics, raster change detection, and Earthdata/NASA data access.
 
-The application has two complementary compute paths:
+## Contents
 
-- **Browser compute** for exploration, charts, statistical analysis, custom
-  CSV/JSON data, and the detective learning mode.
-- **FastAPI compute** for larger or specialized workflows such as forecasting,
-  Bayesian inference, extreme-value analysis, gridded spatial FDR, raster
-  change detection, and NetCDF/HDF5 inspection.
+- [Features](#features)
+- [Data provenance](#data-provenance)
+- [Backend API](#backend-api)
+- [Frontend](#frontend)
+- [Installation](#installation)
+- [Testing & validation](#testing--validation)
+- [Configuration](#configuration)
+- [Assumptions & limitations](#assumptions--limitations)
+- [Directory structure](#directory-structure)
 
-> **Data and scientific-use note:** Results are exploratory and depend on the
-> selected dataset, preprocessing, missing values, spatial/temporal resolution,
-> and statistical assumptions. Treat demonstration data and fallback results as
-> labeled demonstrations, not as observed measurements.
+## Features
 
-## What it does
+### Statistical analysis
+- Mann-Kendall trend test, Theil-Sen slope, OLS regression
+- Seasonal Mann-Kendall with Hamed-Rao and TFPW temporal autocorrelation correction
+- One-way and Two-way ANOVA
+- Nonlinear regression (linear, exponential, logistic, quadratic)
+- GEV block maxima and GPD peak-over-threshold extreme value analysis
+- Shapiro-Wilk normality test, bootstrap confidence intervals
+- Durbin-Watson lag-1 autocorrelation diagnostics
+- Bayesian changepoint MCMC and Bayesian robust AR(1) with convergence diagnostics (R-hat, ESS)
 
-### Explorer
+### Raster analysis (user uploads)
+- DEM differencing with joint validity masking, LoD thresholding, volume in m³
+- SAR backscatter change detection (fixed and Otsu threshold modes), area in km²
+- LULC land-cover transition matrices and change maps
+- Raster geospatial alignment: CRS validation, reprojection, resampling, nodata preservation
 
-- Select Earth variables including temperature, precipitation, NDVI, soil
-  moisture, evapotranspiration, aerosol optical depth, land-surface
-  temperature, ozone, and additional atmosphere, land, ocean, and hydrology
-  variables.
-- Explore predefined global regions or click any map coordinate.
-- Retrieve supported live feeds through the connector registry and NASA POWER,
-  with an explicitly labeled calibrated demonstration fallback when a live
-  endpoint is unavailable.
-- View raw values, deseasonalized anomalies, rolling means, trend estimates,
-  confidence bands, provenance, and missing observations.
-- Export the active analysis as CSV/JSON or a printable dossier.
+### Earthdata / NASA connectivity
+- NASA FIRMS fire detections, EONET events
+- NASA CMR granule search, AppEEARS point extraction, vertical profiles, trace gases
+- NetCDF4/HDF5 inspect and extract
+- NASA POWER monthly time series (reanalysis: temperature, precipitation, radiation, humidity, wind, etc.)
+- ORNL DAAC MODIS time series (NDVI, EVI, global land)
+- USGS NWIS streamflow gauges (United States only)
+- NOAA CO-OPS tide gauge sea level (United States coastal waters only)
+- NASA GIBS WMTS map tiles (true-color, NDVI, snow, LST, SST, global)
 
-### Statistical Lab
-
-The browser-side lab includes descriptive and inferential statistics, OLS and
-robust/nonlinear regression, ANOVA, PCA, residual diagnostics, change-point
-analysis, extreme-value fitting, and autocorrelation-aware Mann-Kendall
-methods. Heavy operations can run in a Web Worker with a main-thread fallback.
-
-### Data Detective and regional contrasts
-
-Detective Mode provides four guided investigations covering Arctic warming,
-Amazon canopy loss, Aral Sea decline, and California soil-moisture stress.
-Regional Contrast compares paired locations whose trends move in opposite
-directions and explains the physical context.
-
-### Earth Compute Lab
-
-The optional backend exposes:
-
-- SARIMA/ARIMA forecasting with diagnostics, decomposition, prediction
-  intervals, and holdout metrics.
-- Multi-chain Bayesian MCMC for robust AR(1) trends and change points.
-- GEV block-maxima and GPD peaks-over-threshold extreme-value analysis.
-- Vectorized gridded Mann-Kendall and BH, BY, Holm, or Bonferroni spatial FDR.
-- DEM differencing, fixed or Otsu-thresholded SAR log-ratio change detection,
-  nodata-aware LULC transitions with georeferenced pixel-area accounting,
-  and ASF
-  catalog search.
-- NASA FIRMS/EONET fire queries and Earthdata CMR, AppEEARS, atmospheric
-  profile, trace-gas, and NetCDF4/HDF5 workflows.
-
-## Architecture
-
-```text
-Browser
-  React 19 + TypeScript + Vite + Tailwind CSS v4
-      ├── NASA POWER and connector integrations
-      ├── Client-side statistics and Web Worker
-      └── /api/v1/* ── Vite proxy (development) ── FastAPI backend
-
-Backend
-  FastAPI + Pydantic
-      ├── NumPy / pandas / SciPy / statsmodels / scikit-learn
-      ├── xarray / netCDF4 / rasterio / shapely
-      └── NASA proxy and uploaded-file workflows
-```
-
-The frontend development server runs on port `3000`; the backend defaults to
-`8000`. The Vite proxy sends `/api` requests to
-`http://127.0.0.1:8000`.
-
-## Requirements
-
-- Node.js with npm
-- Python 3.11 or newer (the backend Docker images use Python 3.12)
-- Optional: Docker for the backend
-- Optional NASA credentials for authenticated FIRMS and Earthdata workflows
-
-## Quick start
-
-### 1. Install frontend dependencies
-
-```bash
-npm install
-```
-
-### 2. Start the frontend
-
-```bash
-npm run dev
-```
-
-Open <http://localhost:3000>. The browser-only explorer and statistical lab can
-be used without the backend.
-
-### 3. Start the optional backend
-
-In a second terminal:
-
-```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-python -m pip install -r requirements.txt
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-```
-
-Backend documentation is available at <http://127.0.0.1:8000/docs>, and the
-health endpoint is <http://127.0.0.1:8000/api/v1/health>.
-
-### Backend with Docker
-
-```bash
-cd backend
-docker build -t heraoculus-backend .
-docker run --rm -p 8000:8000 --env-file .env heraoculus-backend
-```
-
-If no `.env` exists, omit `--env-file .env` or create one from
-[`backend/.env.example`](backend/.env.example).
-
-## Configuration and credentials
-
-Copy the example file before adding optional credentials:
-
-```bash
-cp backend/.env.example backend/.env
-```
-
-Supported settings include:
-
-| Variable | Purpose | Default |
-| --- | --- | --- |
-| `BACKEND_HOST` | Backend bind host | `127.0.0.1` |
-| `BACKEND_PORT` | Backend port | `8000` |
-| `CORS_ORIGINS` | Comma-separated browser origins | Local ports `3000` and `5173` |
-| `NASA_FIRMS_MAP_KEY` | NASA FIRMS active-fire API key | Empty |
-| `EARTHDATA_TOKEN` | NASA Earthdata bearer token | Empty |
-| `EARTHDATA_USERNAME` / `EARTHDATA_PASSWORD` | Earthdata login alternative | Empty |
-| `VITE_BACKEND_URL` | Frontend backend base URL for a separately deployed API | Vite `/api` proxy |
-
-FIRMS and Earthdata credentials are configured exclusively via environment variables on the server.
-Secrets are masked in status responses and are never returned in API responses or frontend state.
-Keyless feeds such as NASA POWER, EONET, CMR, ASF search, local uploads, and demonstration fallbacks
-remain available where supported.
-
-## Backend API
-
-All routes below are prefixed as shown. Request and response schemas are
-defined in [`backend/app/schemas.py`](backend/app/schemas.py), and interactive
-OpenAPI documentation is generated at `/docs`.
-
-| Prefix | Operations |
-| --- | --- |
-| `/api/v1` | `GET /health`, `GET /auth/status` |
-| `/api/v1/stats` | `POST /sarima`, `/bayesian-mcmc`, `/extreme-value`, `/spatial-fdr` |
-| `/api/v1/firms` | `POST /fires` |
-| `/api/v1/earthdata` | `POST /granules`, `/appeears-point`, `/vertical-profile`, `/trace-gases`, `/netcdf/inspect`, `/netcdf/extract` |
-| `/api/v1/rasters` | `POST /dem-diff`, `/dem-diff/upload`, `/sar-change`, `/sar-change/upload`, `/asf-search`, `/lulc-transitions`, `/lulc-transitions/upload` |
-
-Uploaded GeoTIFF and NetCDF/HDF5 requests are bounded by a 35 MB backend
-safety limit. Use the generated API docs for exact multipart fields and JSON
-payloads.
+### Frontend workflows
+- Interactive Explorer with region selection and variable choice
+- Detective learning mode (guided case studies)
+- Regional contrast mode (paired region comparison)
+- Variable encyclopedia with provenance and mission info
+- Custom CSV and GeoTIFF/NetCDF upload
+- Data export (CSV/GeoJSON)
 
 ## Data provenance
 
-Every active series is assigned one of these provenance tiers:
+Every data source carries a `provenanceType` that distinguishes live measurements from catalog metadata, reanalysis, synthetic fallback, and user uploads:
 
-- **Satellite observation**: direct satellite or in-situ connector data.
-- **NASA model / reanalysis**: gridded POWER, MERRA-2, GLDAS, or related model
-  data.
-- **User upload**: CSV or JSON supplied through the Data Studio.
-- **Calibrated demonstration**: offline fallback data labeled in the UI.
+| Provenance type | Sources | Live data? | Notes |
+|---|---|---|---|
+| `reanalysis_model` | NASA POWER (MERRA-2 / GLDAS / CERES) | Yes (reanalysis) | Global gridded reanalysis, not station measurements |
+| `satellite_observation` | MODIS (NDVI/EVI), GIBS (map tiles), CMR (catalog) | Yes (satellite tiles/catalog) | GIBS SST layer is `GHRSST_L4_MUR` map tiles; CMR is metadata-only, no time series |
+| `in_situ_gauge` | USGS NWIS streamflow, NOAA CO-OPS tide gauges | Yes (gauge/station) | United States only |
+| `user_upload` | DEM, SAR, LULC GeoTIFF/NetCDF uploads | N/A (user-provided) | 35 MB limit per file |
+| `synthetic_demo` | Fallback when no live source covers a location | No | Calibrated demonstration data; never masquerades as live |
 
-Missing values are preserved where possible, including NASA fill values such
-as `-999`. Statistical views report the usable sample and missingness rather
-than silently presenting a complete series.
+**Important:** NASA Sea Surface Temperature (SST) is **not** available as a NASA POWER time series. The POWER connector correctly rejects SST (`POWER_PARAM_MAP` excludes it). SST is available only as NASA GIBS map tiles (`GHRSST_L4_MUR_Sea_Surface_Temperature`). Regional providers (USGS streamflow, NOAA sea level) are limited to the United States and are never selected outside their service area.
 
-## Development commands
+## Backend API
+
+Base path: `/api/v1`
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/health` | GET | Service health check |
+| `/auth/status` | GET | Authentication status |
+| `/stats/sarima` | POST | ARIMA/SARIMA time-series forecasting |
+| `/stats/bayesian-mcmc` | POST | Bayesian changepoint / robust AR(1) MCMC |
+| `/stats/extreme-value` | POST | GEV block maxima / GPD POT extreme value |
+| `/stats/spatial-fdr` | POST | Spatial Mann-Kendall with FDR correction |
+| `/firms/fires` | POST | NASA FIRMS fire detections |
+| `/earthdata/granules` | POST | NASA CMR granule search |
+| `/earthdata/appeears-point` | POST | AppEEARS point extraction |
+| `/earthdata/vertical-profile` | POST | Vertical profile extraction |
+| `/earthdata/trace-gases` | POST | Trace gas column data |
+| `/earthdata/netcdf/inspect` | POST | NetCDF4/HDF5 metadata inspect |
+| `/earthdata/netcdf/extract` | POST | NetCDF4/HDF5 variable extract |
+| `/rasters/dem-diff` | POST | DEM differencing (array input) |
+| `/rasters/dem-diff/upload` | POST | DEM differencing (file upload) |
+| `/rasters/sar-change` | POST | SAR change detection (array input) |
+| `/rasters/sar-change/upload` | POST | SAR change detection (file upload) |
+| `/rasters/asf-search` | POST | ASF SAR scene search |
+| `/rasters/lulc-transitions` | POST | LULC transition analysis (array input) |
+| `/rasters/lulc-transitions/upload` | POST | LULC transition analysis (file upload) |
+
+**File upload limit:** 35 MB per file, enforced during streaming (not after full read). Invalid magic bytes, empty files, and path-traversal filenames are rejected with 400; oversized files return 413.
+
+## Frontend
+
+- Framework: React + TypeScript + Vite
+- Dev server: `http://localhost:3000`
+- Build output: `dist/`
+- Test runner: Vitest (Node environment, no browser required)
+- Connector registry: `src/services/connectors/registry.ts` — geographically aware selection with deterministic fallback
+
+## Installation
+
+### Prerequisites
+
+- Node.js 18+ and npm
+- Python 3.10+ and pip (backend)
+- `ffmpeg`, `gdal`, `rasterio`, `netCDF4`, `xarray`, `scipy`, `numpy`, `pandas`, `pyproj` (backend)
+
+### Backend
 
 ```bash
-# Type-check and create the production frontend bundle
-npm run build
-
-# Serve the production bundle locally
-npm run preview
-
-# Run backend tests
 cd backend
-python -m pytest
+pip install -r requirements.txt
+cp .env.example .env   # edit NASA_FIRMS_MAP_KEY, EARTHDATA_TOKEN, etc. as needed
+python -m app.main     # or: uvicorn app.main:app --reload
 ```
 
-The repository also contains focused TypeScript verification scripts in
-[`tests/`](tests/) and statistical unit tests beside their implementation in
-[`src/services/statistics/`](src/services/statistics/). There is currently no
-dedicated npm test script; use the project’s configured TypeScript/build
-checks and the backend pytest suite when validating changes.
+Backend tests:
 
-## Deployment
-
-The root [`vercel.json`](vercel.json) builds the Vite frontend with
-`npm run build`, serves `dist`, and rewrites browser routes to
-`index.html`. The backend includes a standard
-[`backend/Dockerfile`](backend/Dockerfile) and a Vercel-oriented
-[`backend/Dockerfile.vercel`](backend/Dockerfile.vercel).
-
-For a separately hosted backend, set `VITE_BACKEND_URL` at frontend build time
-and configure the backend’s `CORS_ORIGINS` for the deployed frontend origin.
-Do not commit `backend/.env` or any API credentials.
-
-## Repository map
-
-```text
-src/
-  App.tsx                         Main application state and mode routing
-  components/                     Explorer, labs, maps, charts, and UI
-  services/connectors/             NASA and public-data connector registry
-  services/statistics/             Browser statistical implementations
-  services/phase2Api.ts            Typed FastAPI client
-  workers/                         Off-thread statistical computation
-  types/earthScience.ts            Shared domain and provenance types
-backend/app/
-  main.py                         FastAPI entrypoint and CORS
-  routers/                        Health, statistics, Earthdata, FIRMS, rasters
-  services/                       Scientific models and external-data adapters
-  schemas.py                      Pydantic API contracts
-backend/tests/                    Backend API and scientific validation tests
-public/                           Browser icons and static assets
+```bash
+cd backend
+python -m pytest tests/ -v
 ```
 
-## License and external data
+### Frontend
 
-No license file is currently included in this repository. Review the terms of
-each upstream provider before redistributing data or derived products,
-including NASA, NOAA, USGS, ASF, and other connector sources.
+```bash
+cd <project-root>
+npm install
+```
+
+Frontend tests:
+
+```bash
+npm run test
+```
+
+### Docker (backend)
+
+```bash
+cd backend
+docker build -t geo-iris-backend .
+docker run -p 8000:8000 --env-file .env geo-iris-backend
+```
+
+## Testing & validation
+
+### Backend (Python/pytest)
+
+17 test files covering health/auth, SAR/FIRMS/Earthdata uploads, statistics, spatial FDR, raster alignment, DEM/SAR/LULC nodata handling, pixel-area audits, extreme-value temporal assumptions, Bayesian MCMC diagnostics, changepoint recovery, NASA POWER parameter-map correctness, and upload size-limit streaming.
+
+```bash
+cd backend
+python -m pytest tests/ -v
+```
+
+### Frontend (TypeScript/Vitest)
+
+6 test files covering statistical algorithms, worker communication and main-thread fallback, connector geographic selection and error handling, data provenance, CSV ingestion and empty-data handling, and Explorer workflow integration.
+
+```bash
+npm run test
+```
+
+### Type check / lint
+
+```bash
+npm run typecheck     # strict tsc --noEmit (serves as lint)
+npm run build         # tsc && vite build
+```
+
+## Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `BACKEND_HOST` | `0.0.0.0` | Backend bind host |
+| `BACKEND_PORT` | `8000` | Backend bind port |
+| `CORS_ORIGINS` | `http://localhost:3000` | Allowed CORS origins |
+| `NASA_FIRMS_MAP_KEY` | *(unset)* | NASA FIRMS map tile API key (optional) |
+| `EARTHDATA_TOKEN` | *(unset)* | NASA Earthdata auth token (optional) |
+| `EARTHDATA_USERNAME` | *(unset)* | NASA Earthdata username (optional) |
+| `EARTHDATA_PASSWORD` | *(unset)* | NASA Earthdata password (optional) |
+| `VITE_BACKEND_URL` | `http://localhost:8000` | Frontend backend URL (Vite env, prefix `VITE_`) |
+
+Edit `.env` (backend) for server-side variables. `VITE_BACKEND_URL` is a Vite frontend variable and must be prefixed with `VITE_` in `.env`.
+
+## Assumptions & limitations
+
+- **NASA POWER** is global reanalysis (MERRA-2/GLDAS/CERES), not in-situ measurements. Polar-night and ocean cells return explicit fill values.
+- **USGS streamflow** and **NOAA sea level** are United States only; queries outside their service area return a deterministic fallback (no connector selected), never a masquerading live source.
+- **SST** is not available via NASA POWER time series; only as GIBS map tiles.
+- **CMR** is metadata/catalog search only; it produces no time series.
+- **GIBS** is map-tile visualization only; it produces no time series.
+- **Extreme value analysis** requires explicit dates and observation frequency; without dates, frequency is flagged as unknown and return-period assumptions are not silently inferred.
+- **Bayesian MCMC** convergence diagnostics (R-hat, ESS) are reported per parameter; unconverged chains are flagged, not hidden.
+- **Raster analysis** uses joint validity masking; nodata/NaN/Inf pixels are never zero-filled or included in volumes/areas.
+- **Synthetic demo data** is used as fallback when no live source covers a query location; it is clearly labeled `isLiveNasa: false` / `provenanceType: synthetic_demo` and never presented as a successful live measurement.
+- No scientific claims of validation against external reference datasets are made beyond the unit/regression tests in `tests/` and `backend/tests/`.
+
+## Directory structure
+
+```
+Geo-Iris-main/
+├── README.md
+├── GEO-IRIS_COMPLETE_FEATURE_CATALOG.txt
+├── package.json
+├── tsconfig.json
+├── vite.config.ts
+├── vitest.config.ts
+├── src/
+│   ├── App.tsx
+│   ├── components/
+│   │   ├── DetectiveMode.tsx
+│   │   ├── RegionalContrastView.tsx
+│   │   ├── StatisticalLab.tsx
+│   │   ├── VariableEncyclopedia.tsx
+│   │   ├── DataExportModal.tsx
+│   │   ├── CustomDataUploader.tsx
+│   │   └── ...
+│   ├── services/
+│   │   ├── statistics/          # trend, ANOVA, nonlinear, GEV, bootstrap, PCA
+│   │   ├── connectors/          # 6 EarthData connectors + registry
+│   │   ├── nasaData.ts          # CSV ingestion, variable definitions
+│   │   └── ...
+│   ├── workers/
+│   │   ├── statsWorker.ts
+│   │   └── statsWorkerClient.ts # main-thread fallback
+│   └── types/
+│       └── earthScience.ts
+├── tests/
+│   ├── statistics.test.ts
+│   ├── connector.test.ts
+│   ├── worker.test.ts
+│   ├── provenance.test.ts
+│   ├── csv-ingestion.test.ts
+│   └── explorer.integration.test.ts
+└── backend/
+    ├── app/
+    │   ├── main.py
+    │   ├── config.py
+    │   ├── schemas.py
+    │   ├── routers/
+    │   │   ├── health.py
+    │   │   ├── earthdata.py
+    │   │   ├── firms.py
+    │   │   ├── rasters.py
+    │   │   └── stats_advanced.py
+    │   └── services/
+    │       ├── earthdata_service.py
+    │       ├── firms_service.py
+    │       ├── raster_service.py
+    │       ├── bayesian_service.py
+    │       ├── extreme_service.py
+    │       ├── spatial_fdr_service.py
+    │       └── forecast_service.py
+    ├── tests/
+    │   ├── test_health_and_auth.py
+    │   ├── test_earthdata_firms.py
+    │   ├── test_stats_advanced.py
+    │   ├── test_rasters.py
+    │   ├── test_lulc_nodata.py
+    │   ├── test_auth_security.py
+    │   ├── test_spatial_fdr_validation.py
+    │   ├── test_pixel_area_audit.py
+    │   ├── test_nasa_power_sst.py
+    │   ├── test_upload_validation.py
+    │   ├── test_dem_nodata.py
+    │   ├── test_sar_nodata.py
+    │   ├── test_sar_threshold_modes.py
+    │   ├── test_raster_alignment.py
+    │   ├── test_extreme_temporal.py
+    │   ├── test_bayesian_diagnostics.py
+    │   └── test_changepoint_validation.py
+    ├── requirements.txt
+    ├── .env.example
+    └── Dockerfile
+```

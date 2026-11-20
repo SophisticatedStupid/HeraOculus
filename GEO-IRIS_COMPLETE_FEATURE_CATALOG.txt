@@ -35,14 +35,21 @@ D:\Geo-Iris-main\Geo-Iris-main\
   │   ├─ services/
   │   │   ├─ nasaData.ts           Core earth variables + NASA POWER data fetch
   │   │   ├─ nasaDataExpanded.ts   Expanded NASA dataset definitions
-  │   │   ├─ statistics/           18 statistical modules/tests (see 3.3)
-  │   │   │   ├─ connectors/           6 NASA data connectors + registry
-  │   │   │   ├─ phase2Api.ts          FastAPI backend client interfaces
-  │   │   │   ├─ detectiveCases.ts     Detective mode case definitions
-  │   │   │   └─ regionalContrasts.ts  Regional contrast view data
+  │   │   ├─ statistics/           Statistical modules (bootstrap, PCA, MK, ANOVA, GEV, etc.)
+  │   │   ├─ connectors/           6 NASA data connectors + registry (sibling to statistics/)
+  │   │   │   ├─ powerConnector.ts   NASA POWER monthly API (reanalysis_model, global)
+  │   │   │   ├─ modisConnector.ts   ORNL DAAC MODIS (satellite_observation, global land)
+  │   │   │   ├─ usgsConnector.ts    USGS NWIS streamflow (in_situ_gauge, regional US)
+  │   │   │   ├─ noaaConnector.ts    NOAA CO-OPS tide gauges (in_situ_gauge, regional US coastal)
+  │   │   │   ├─ cmrConnector.ts     NASA CMR catalog (satellite_observation, catalog only)
+  │   │   │   ├─ gibsConnector.ts    NASA GIBS WMTS tiles (satellite_observation, tiles only)
+  │   │   │   └─ registry.ts         Geographically aware connector registry + selection
+  │   │   ├─ phase2Api.ts          FastAPI backend client interfaces
+  │   │   ├─ detectiveCases.ts     Detective mode case definitions
+  │   │   ├─ regionalContrasts.ts  Regional contrast view data
   │   │   ├─ workers/
   │   │   │   ├─ statsWorker.ts        Web Worker: heavy statistical computations
-  │   │   │   └─ statsWorkerClient.ts  Client-side worker dispatch + fallback
+  │   │   │   └─ statsWorkerClient.ts  Client-side worker dispatch + main-thread fallback
   │   │   ├─ components/               React UI components
   │   │   │   ├─ StatisticalLab/       Statistical Lab (analysis, results, diagnostics)
   │   │   │   ├─ Phase2Lab/            Backend-connected scientific panels
@@ -75,16 +82,28 @@ D:\Geo-Iris-main\Geo-Iris-main\
   │   │   │   │   ├─ extreme_service.py GEV block maxima + GPD POT
   │   │   │   │   ├─ raster_service.py DEM DoD, SAR log-ratio, LULC transitions, ASF
   │   │   │   │   └─ spatial_fdr_service.py Vectorized Mann-Kendall + Spatial FDR
-  │   │   ├─ tests/
-  │   │   │   ├─ test_earthdata_firms.py
-  │   │   │   ├─ test_health_and_auth.py
-  │   │   │   ├─ test_rasters.py
-  │   │   │   └─ test_stats_advanced.py
   │   │   ├─ requirements.txt          Python dependencies (22 packages)
   │   │   ├─ Dockerfile                Python 3.12-slim, port 8000
   │   │   ├─ Dockerfile.vercel         Vercel deployment, port 80
   │   │   └─ .env.example              Example environment configuration
-  │   ├─ tests/                        (frontend tests location, if any)
+  │   ├─ tests/                        Backend pytest tests (17 files, ~155 test functions)
+  │   │   ├─ test_earthdata_firms.py
+  │   │   ├─ test_health_and_auth.py
+  │   │   ├─ test_rasters.py
+  │   │   ├─ test_stats_advanced.py
+  │   │   ├─ test_lulc_nodata.py
+  │   │   ├─ test_auth_security.py
+  │   │   ├─ test_spatial_fdr_validation.py
+  │   │   ├─ test_pixel_area_audit.py
+  │   │   ├─ test_nasa_power_sst.py
+  │   │   ├─ test_upload_validation.py
+  │   │   ├─ test_dem_nodata.py
+  │   │   ├─ test_sar_nodata.py
+  │   │   ├─ test_sar_threshold_modes.py
+  │   │   ├─ test_raster_alignment.py
+  │   │   ├─ test_extreme_temporal.py
+  │   │   ├─ test_bayesian_diagnostics.py
+  │   │   └─ test_changepoint_validation.py
   │   ├─ workers/                      (root-level workers reference)
   │   ├─ assets/                       Static assets
   │   ├─ theme/                        (root-level theme reference)
@@ -131,32 +150,37 @@ D:\Geo-Iris-main\Geo-Iris-main\
   6. CMR (Common Metadata Repository)
   Plus connector registry for dynamic lookup
 
-3.3 Frontend Statistics Modules (src/services/statistics/) — 18 modules
+3.3 Frontend Statistics Modules (src/services/statistics/) — 16 modules
   1. bootstrapCI          — Bootstrap confidence intervals (B >= 2000 iterations)
   2. pcaAnalysis          — Principal Component Analysis / SVD decomposition
   3. seasonalMannKendall  — Seasonal Mann-Kendall trend test with autocorrelation
-     correction (standard, hamed_rao, tfpw methods)
+       correction (standard, hamed_rao, tfpw methods)
   4. senSlopeExact        — Theil-Sen pairwise slopes (full O(n^2) exact)
   5. pettittChangePoint   — Pettitt change-point detection
   6. computeDescriptiveStats — Descriptive summary statistics
   7. nonlinearRegression  — Exponential, logarithmic, power, quadratic, logistic
   8. fitGEV               — Generalized Extreme Value distribution fitting
   9. runOneWayAnova       — One-way ANOVA with optional observationOrder,
-     Shapiro-Wilk verdict classification, and Durbin-Watson null-safe handling
+       Shapiro-Wilk verdict classification, and Durbin-Watson null-safe handling
   10. inferential.ts      — Bayesian inference, shrinkage estimation,
-     MCMC posterior summaries
+       MCMC posterior summaries
   11. distributions.ts     — Probability distribution fitting and sampling
   12. diagnostics.ts       — Normality tests (Shapiro-Wilk verdict),
-     Durbin-Watson with observation order preservation, lag-1 autocorrelation
+       Durbin-Watson with observation order preservation, lag-1 autocorrelation
   13. anova.ts             — One-way ANOVA backend: classifyAssumptionTest
-     (p-value to verdict), shapiroWilkTest (returns verdict field),
-     runOneWayAnova (preserveObservationOrder option)
-  14. index.ts             — Barrel re-export of all 18 modules
+       (p-value to verdict), shapiroWilkTest (returns verdict field),
+       runOneWayAnova (preserveObservationOrder option)
+  14. index.ts             — Barrel re-export of all modules +
+       processTimeSeries, analyzeTrend, analyzeTrendSafe, validation functions
   15. descriptive.ts       — Descriptive statistics including coefficient
-     of variation, standard error
+       of variation, standard error
   16. timeseries.ts        — Time series decomposition, seasonal analysis
-  17. mannKendallTieFix.test.ts — Mann-Kendall tie-handling tests
-  18. twoWayAnova.test.ts  — Two-way ANOVA test definitions
+
+  Frontend test files (tests/statistics.test.ts):
+  - Mann-Kendall / Theil-Sen / OLS, seasonal MK + Hamed-Rao / TFPW
+  - One-way / Two-way ANOVA, nonlinear regression, GEV fit
+  - Bootstrap CI, descriptive stats, Shapiro-Wilk, senSlopeExact
+  - Missing-data handling, empty/insufficient input, causal-claim audit
   19. twoWayAnova.ts       — Two-way ANOVA backend implementation
 
 3.4 Frontend Web Worker (src/workers/)
@@ -531,10 +555,15 @@ D:\Geo-Iris-main\Geo-Iris-main\
     max_results (1-30)
 
 ================================================================================
-7. BACKEND TESTS (13 files, 88 tests)
+7. BACKEND TESTS (17 files, ~155 test functions)
 ================================================================================
 
-7.1 test_earthdata_firms.py (3 tests)
+7.1 test_health_and_auth.py (3 tests)
+  - test_health_endpoint: status ok, capabilities all true
+  - test_unauthenticated_user_cannot_configure_credentials: POST /auth/configure returns 404
+  - test_environment_defaults_still_work: health succeeds regardless of env state
+
+7.2 test_earthdata_firms.py (3 tests)
   - test_netcdf_inspect_and_extract_roundtrip:
       Creates 24-month 3x3 NetCDF cube, tests inspect (dims, var name, units)
       and extract (24 series points, spatial cube present, user_upload tier)
@@ -545,11 +574,6 @@ D:\Geo-Iris-main\Geo-Iris-main\
   - test_firms_proxy_without_key_handles_gracefully:
       FIRMS without MAP_KEY returns 200, tier in {satellite_observation,
       synthetic_demo}, >= 1 detection
-
-7.2 test_health_and_auth.py (2 tests)
-  - test_health_endpoint: status ok, capabilities sarima/bayesian_mcmc/
-    spatial_fdr/netcdf4_hdf5_xarray/rasterio_dem_sar_lulc all true
-  - test_unauthenticated_user_cannot_configure_credentials: POST /auth/configure returns 404
 
 7.3 test_rasters.py (3 tests)
   - test_dem_preset_and_geotiff_upload:
@@ -564,59 +588,170 @@ D:\Geo-Iris-main\Geo-Iris-main\
       transition matrix >= 2 classes
       GeoTIFF upload: 12.5% changed (within 0.2 tolerance)
 
-7.4 test_lulc_nodata.py (3 tests)
-  - test_lulc_with_nodata_handling: Nodata/NaN/Inf pixels excluded,
-    percentage of valid pixels reported
-  - test_lulc_edge_case_all_nodata: All nodata returns empty result
-  - test_lulc_percentages_consistent: Percentages sum to 100%
+7.4 test_lulc_nodata.py (9 tests)
+  - Nodata in before/after raster excluded from transition matrix
+  - Different nodata locations: union excluded
+  - Class zero (water) treated as valid class
+  - NaN values treated as nodata
+  - Completely invalid areas: all pixels excluded
+  - Nodata not rendered as transition class
+  - Rendering produces valid PNGs
+  - Backward compatibility keys preserved + new excluded_pixels/excluded_pct keys
 
-7.5 test_auth_security.py (5 tests)
-  - test_environment_defaults_still_work: health endpoint succeeds regardless of env state
-  - test_credentials_never_appear_in_response_bodies: raw secrets never in /health or /auth/status
-  - test_environment_variable_isolation_between_simulated_users: no per-user drift, configure absent
+7.5 test_auth_security.py (3 tests)
+  - test_environment_defaults_still_work
+  - test_credentials_never_appear_in_response_bodies
+  - test_environment_variable_isolation_between_simulated_users
 
-7.6 test_changepoint_validation.py (3 tests)
-  - test_pettitt_change_point_detection: Valid pettitt detection
-  - test_pettitt_no_change_point: Stable series returns no changepoint
-  - test_pettitt_edge_cases: Edge case handling
+7.6 test_changepoint_validation.py (7 tests)
+  - Changepoint recovered with known shift and tau fraction
+  - Reproducible seeds produce identical results
+  - Multiple chains not identically initialized
+  - Invalid posterior (NaN/inf) rejected safely without crashing
+  - Adaptation bounded during burn-in only
+  - HDI/CI intervals, R-hat, ESS, traces well-formed
 
-7.7 test_nasa_power_sst.py (2 tests)
-  - test_power_sst_retrieval: NASA POWER SST data retrieval
-  - test_power_sst_units: SST units validation
+7.7 test_nasa_power_sst.py (4 tests)
+  - SST is NOT mapped to TS (Earth Skin Temperature) in NASA POWER
+  - SST requests via NASA POWER return isLiveNasa: false + clear message
+  - Live vs synthetic provenance clearly distinguished
+  - NASA POWER connector rejects unsupported SST variable
 
-7.8 test_pixel_area_audit.py (3 tests)
-  - test_pixel_area_computation: Pixel area calculation accuracy
-  - test_pixel_area_tolerance: Tolerance handling for edge pixels
-  - test_pixel_area_units: Area unit consistency
+7.8 test_pixel_area_audit.py (13 tests)
+  - 10m square projected pixel area = 100 m^2 (affine determinant)
+  - Rectangular 10x20m pixel area = 200 m^2
+  - Different pixel sizes (5m, 30m)
+  - Feet-based CRS unit conversion (EPSG:2236)
+  - Rotated affine transform pixel area preserved
+  - Geographic pixel area latitude-dependent (60N < 10N)
+  - Geographic nonuniform pixel areas across latitudes
+  - DEM volume in cubic metres (independent reference)
+  - DEM nodata never zero-filled / excluded from volume
+  - LULC transition areas (independent reference, km^2)
+  - SAR area in square kilometres (independent reference)
+  - pixel_area_meta fields present
+  - Synthetic constant area metadata
 
-7.9 test_spatial_fdr_validation.py (3 tests)
-  - test_spatial_fdr_prunes_false_positives:
-      14x16 grid, FDR significant <= raw significant,
-      trend_png and fdr_png base64 data URIs
-  - test_spatial_fdr_alpha_levels: Alpha level compliance
-  - test_spatial_fdr_empty_grid: Empty grid returns empty results
+7.9 test_upload_validation.py (15 tests)
+  - Upload below 35 MB limit accepted
+  - Upload at exactly 35 MB accepted (size check passes)
+  - Upload above 35 MB rejected with HTTP 413
+  - Malformed GeoTIFF rejected (HTTP 400, magic bytes)
+  - Malformed NetCDF rejected (HTTP 400, magic bytes)
+  - Empty file rejected (HTTP 400)
+  - Path-traversal filename rejected (HTTP 400)
+  - Chunked reading enforces limit during streaming
+  - Temp file cleanup after success
+  - Concurrent uploads (8 workers, no interference)
+  - validate_upload_signature for GeoTIFF and NetCDF
+  - cleanup_temp_file safe for None/missing paths
+  - Size limit enforced during streaming (not after full read)
 
-7.10 test_stats_advanced.py (4 tests)
-  - test_sarima_with_missing_polar_night_gaps:
-      84 months with Dec/Jan gaps, n_missing > 0, 12 forecast steps,
-      first forecast date "2023-01", CI95 bounds valid, holdout RMSE >= 0
-  - test_bayesian_mcmc_robust_ar1_converges_on_positive_trend:
-      108 months, slope > 0.12, R-hat < 1.15, P(positive) > 0.90,
-      3 trace chains
-  - test_bayesian_mcmc_changepoint_model:
-      Hinge at t=4.0 years, slope_shift > 0.25, changepoint date not null
-  - test_extreme_value_gev_and_gpd:
-      Gumbel data, GEV: 6 return levels, 100-period > 2-period
-      GPD: >= 10 exceedance samples
+7.10 test_dem_nodata.py (12 tests)
+  - Both DEMs valid: exact min/max/mean/std changes
+  - One DEM all nodata: structured zero result, no crash
+  - Both DEMs all nodata: short circuit, no crash
+  - Partial nodata excluded from volume
+  - Different nodata patterns before/after: union excluded
+  - NaN and Inf excluded from statistics
+  - No spatial overlap: structured zero result, no crash
+  - GeoTIFF one all-nodata: volumes = 0
+  - GeoTIFF both all-nodata: no crash
+  - Valid pixels surrounding nodata not contaminated
+  - API contract preserved (existing + new summary keys)
+  - Synthetic DEM pair fully valid
 
-7.11 tests/statistical_interpretation_verify.ts (20 tests)
-  - 20 tests covering:
-    - Trend verdict wording (no "caused by", no "conclusively")
-    - P-value classification boundaries (0.05, 0.01, 0.001)
-    - Durbin-Watson returns null when ordering unavailable
-    - Shapiro-Wilk verdict classification
-    - No unsupported causal claims in plain English output
-    - Legacy provenance key preserved for backward compatibility
+7.11 test_sar_nodata.py (9 tests)
+  - Completely valid identical rasters: no change, coverage 100%
+  - Known change region: exact changed pixel count and area
+  - Three valid + one nodata: nodata never contributes to changed area
+  - NaN and Inf excluded from all statistics
+  - All-invalid rasters: no crash, changed = 0
+  - Speckle filter near nodata: no contamination of valid pixels
+  - GeoTIFF different nodata patterns: union excluded
+  - GeoTIFF all-invalid pair: valid = 0, changed = 0
+  - Synthetic SAR pair fully valid, coverage = 100%
+
+7.12 test_sar_threshold_modes.py (9 tests)
+  - Fixed mode: positive change (drop), negative change (gain), no change
+  - Fixed mode constant scene: no change
+  - Otsu mode detects change, computes suggested threshold
+  - Otsu mode falls back to fixed on degenerate histogram
+  - Otsu mode with noise
+  - Backward compatibility keys preserved
+  - Applied mask corresponds to displayed threshold
+
+7.13 test_raster_alignment.py (16 tests)
+  - Same CRS + same grid: fast-path copy
+  - Same CRS, different resolution: resample to ref grid
+  - Same CRS, shifted grid: align to ref grid
+  - Different projected CRSs: reproject onto ref grid
+  - Geographic vs projected CRS: reproject
+  - Both missing CRS: rejected by default
+  - Both missing CRS + pixel_grid_only: warned resize
+  - One missing CRS: rejected both directions
+  - Different array dimensions: resample to ref shape
+  - Nodata preserved as NaN, never zero
+  - Out-of-coverage remains NaN, no fabricated zeros
+  - Categorical nearest-neighbour preserves class labels
+  - Continuous bilinear produces intermediate values
+  - DEM upload alignment end-to-end
+  - LULC upload alignment end-to-end
+  - Missing CRS end-to-end rejected
+
+7.14 test_extreme_temporal.py (11 tests)
+  - Temporal inference: daily (365.25 obs/year), monthly (12 obs/year)
+  - GEV block maxima with daily input: correct block duration years
+  - GPD POT with monthly input: exceedance rate per period
+  - No dates: frequency unknown, temporal_assumption_valid false
+  - Irregular timestamps detected and flagged
+  - block_duration_years calculation
+  - Return period unit consistently "years"
+  - GPD exceedance rate uses exposure years
+  - Return periods not silently inferred from array length
+  - Duplicate timestamps detected
+  - Missing years reflected in coverage_ratio and warnings
+
+7.15 test_bayesian_diagnostics.py (14 tests)
+  - Well-mixed chains: R-hat near 1, bulk ESS high
+  - Non-converged chains: R-hat > 1
+  - Bulk ESS high for well-mixed, low for identical chains
+  - Tail ESS for heavy-tailed distributions
+  - Pathologies: identical chains, zero variance, non-finite samples detected
+  - Short chain ESS warnings
+  - Parameter summary: converged flag, R-hat, ESS
+  - Burn-in adequacy warnings
+  - Heavy-tailed: tail ESS <= bulk ESS
+  - Full Bayesian MCMC run returns diagnostics structure
+
+7.16 test_spatial_fdr_validation.py (23 tests)
+  - No-tie raster matches independent reference (Z, p, slope)
+  - Quantized raster tie correction matches reference
+  - Constant pixels: Z=0, p=1, slope=0
+  - Missing years skip NaNs correctly
+  - Monthly/annual/irregular timestamp slope calculation
+  - All-invalid pixels excluded
+  - Small grids run successfully
+  - BH/BY/Holm/Bonferroni valid q-values, correct ordering
+  - Reproducible results with same seed
+  - Ambiguous temporal spacing rejected
+  - Monthly vs annual slope ratio = 12
+  - Timestamp parsing to decimal years
+  - Hamed-Rao: independent obs -> variance correction ~1.0
+  - Hamed-Rao: positive AR -> variance inflation > 1.0
+  - Hamed-Rao: negative AR -> variance deflation (bounded 0.5)
+  - No trend + positive AR: corrected reduces false positives
+  - Known trend + positive AR: correction preserves detection
+  - Spatially correlated noise + temporal AR both apply
+  - Missing pixels handled with autocorrelation correction
+  - Tied observations with AR handled correctly
+  - BH vs BY ordering preserved with autocorrelation
+
+7.17 test_stats_advanced.py (4 tests)
+  - test_sarima_with_missing_polar_night_gaps: 84 months, gaps, forecast CI valid
+  - test_bayesian_mcmc_robust_ar1_converges_on_positive_trend: R-hat < 1.15, P(positive) > 0.90
+  - test_bayesian_mcmc_changepoint_model: slope_shift > 0.25, changepoint date not null
+  - test_extreme_value_gev_and_gpd: GEV 6 return levels, GPD >= 10 exceedance samples
 
 ================================================================================
 8. STATISTICAL ANALYSIS METHODS
@@ -799,21 +934,29 @@ Changes Made:
   - ANOVA badge: "No Significant Difference" → "No significant variance detected"
   - Added interpretation text for ANOVA and trend sections
 
-8.9.6 Validation Tests (tests/statistical_interpretation_verify.ts)
-  - 20 tests covering:
-    - Trend verdict wording (no "caused by", no "conclusively")
-    - P-value classification boundaries (0.05, 0.01, 0.001)
-    - Durbin-Watson returns null when ordering unavailable
-    - Shapiro-Wilk verdict classification
-    - No unsupported causal claims in plain English output
-    - Legacy provenance key preserved for backward compatibility
+ 8.9.6 Frontend Validation Tests (tests/*.test.ts — Vitest)
+   - tests/statistics.test.ts — Mann-Kendall, Theil-Sen, OLS, seasonal MK +
+       Hamed-Rao/TFPW, one-way/two-way ANOVA, nonlinear regression, GEV fit,
+       bootstrap CI, Shapiro-Wilk, missing-data handling, empty/insufficient
+       input, causal-claim audit
+   - tests/connector.test.ts — Connector registry, global vs regional coverage,
+       regional rejection outside service area, deterministic fallback, no
+       masquerading live sources, invalid coordinates, determinism
+   - tests/worker.test.ts — Worker dispatch, main-thread fallback (Worker
+       unavailable), error propagation, viaWorker flag
+   - tests/provenance.test.ts — Provenance tiers per connector, unavailable
+       results flagged (not masqueraded as live), CMR/GIBS support no variables
+   - tests/csv-ingestion.test.ts — detectCsvPrimaryVariable,
+       extractCsvCoordinates, parseCustomCsv (valid/empty/malformed CSV)
+   - tests/explorer.integration.test.ts — Explorer workflow: selection ->
+       validation -> trend analysis chaining, global/regional coverage,
+       fallback for out-of-coverage regional variables
 
-8.9.7 Verification Results
-  - Backend tests: 88 passed (13 files)
-  - tests/anova.verify.ts: passed
-  - tests/phase1_stats.verify.ts: passed
-  - tests/statistical_interpretation_verify.ts: 20 passed, 0 failed
-  - TypeScript compilation: npx tsc --noEmit — clean
+ 8.9.7 Verification Results
+   - Backend tests: ~155 passed (17 pytest files)
+   - Frontend tests: 79 passed (6 vitest files)
+   - TypeScript compilation: tsc --noEmit — clean
+   - Production build: tsc && vite build — clean
 
 ================================================================================
 9. NASA DATA SOURCES & PROXY FEEDS
@@ -836,11 +979,29 @@ Changes Made:
   - NASA Earthdata Login: Authenticated OPeNDAP/S3 access (optional)
 
 9.3 Data Provenance Tiers
-  - satellite_observation: Live NASA satellite data
-  - reanalysis_model: Reanalysis model data
-  - user_upload: User-uploaded NetCDF4/HDF5/GeoTIFF
-  - synthetic_demo: Labeled demonstration/benchmark data
-  - in_situ_gauge: In-situ station/gauge observations (ground truth references)
+  - satellite_observation: NASA satellite/catalog data
+      * MODIS (NDVI/EVI): live satellite time series, global land
+      * GIBS (map tiles): live WMTS tile overlays, global (incl. SST layer
+        GHRSST_L4_MUR — map tiles only, no time series)
+      * CMR (granule catalog): metadata search only, no time series
+      * Some FIRMS/GIBS fallback paths may return synthetic_demo tier
+      * is_live flag distinguishes live vs synthetic per response
+  - reanalysis_model: NASA POWER (MERRA-2/GLDAS/CERES), global gridded reanalysis
+  - user_upload: User-uploaded NetCDF4/HDF5/GeoTIFF (DEM, SAR, LULC)
+  - synthetic_demo: Labeled demonstration/benchmark data (fallback when no
+      live source covers a query location; never masqueraded as live)
+  - in_situ_gauge: USGS NWIS streamflow (US only), NOAA CO-OPS tide gauges
+      (US coastal waters only)
+
+9.3a NASA SST Availability
+  - Sea Surface Temperature (SST) is NOT available via NASA POWER time series.
+    The POWER connector's POWER_PARAM_MAP intentionally excludes 'sst' because
+    the TS parameter (Earth Skin Temperature) is NOT sea-surface temperature.
+    SST requests via POWER return isLiveNasa: false with a clear message.
+  - SST IS available via NASA GIBS map tiles (GHRSST_L4_MUR_Sea_Surface_Temperature)
+    — map tile visualization only, no time-series extraction.
+  - SST exists as an EARTH_VARIABLES entry with synthetic demo data for the
+    Variable Encyclopedia, but no live time-series connector serves it.
 
 ================================================================================
 10. FILE UPLOAD SUPPORT
