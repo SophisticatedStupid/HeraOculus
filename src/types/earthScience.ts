@@ -183,6 +183,27 @@ export interface TrendAnalysisResult {
   latestValidObservation?: string;
 }
 
+// ── Safe trend analysis result (no-throw wrapper) ────────────────────
+
+export type TrendAnalysisState = 'loading' | 'ready' | 'unavailable' | 'empty' | 'error';
+
+export interface TrendAnalysisResponse {
+  state: TrendAnalysisState;
+  /** Populated only when state === 'ready' */
+  result?: TrendAnalysisResult;
+  /** Validation diagnostics describing why the data was rejected */
+  validation?: {
+    totalPoints: number;
+    validCount: number;
+    missingCount: number;
+    minRequired: number;
+    messages: string[];
+    state: 'loading' | 'ready' | 'unavailable' | 'error' | 'empty';
+  };
+  /** Human-readable explanation for non-ready states */
+  explanation?: string;
+}
+
 // ── Connector Registry Types ──────────────────────────────────────────
 
 export interface ConnectorCapabilities {

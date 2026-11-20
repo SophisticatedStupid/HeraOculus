@@ -12,12 +12,14 @@ export * from './diagnostics';
 export * from './fdr';
 export * from './anova';
 export * from './twoWayAnova';
+export * from './dataValidation';
 
 // ── Backward compatibility exports for existing codebase ─────────────
 
-import { TimeSeriesPoint, TrendAnalysisResult, VariableId } from '../../types/earthScience';
+import { TimeSeriesPoint, TrendAnalysisResult, TrendAnalysisResponse, VariableId } from '../../types/earthScience';
 import { normalPValue, tCDF, tQuantile } from './distributions';
 import { computeTieGroups, tieSign, MANN_KENDALL_TIE_TOLERANCE } from './timeseries';
+import { validateTimeSeriesForAnalysis, DataValidationResult } from './dataValidation';
 
 /**
  * Calculate Deseasonalized Anomalies and 12-Month Moving Averages
@@ -199,6 +201,7 @@ export function calculateMannKendall(
 
 /**
  * Complete Statistical Trend Analysis
+ * Throws on empty or insufficient data — use analyzeTrendSafe for no-throw behavior.
  */
 export function analyzeTrend(
   points: TimeSeriesPoint[],
@@ -368,6 +371,108 @@ export function analyzeTrend(
   };
 }
 
+/* <-- Removed duplicate function body starting at line 372 */
+
+/**
+ * Safe version of analyzeTrend that returns a TrendAnalysisResponse instead of throwing.
+ * Performs data validation first, then runs analysis only when data is sufficient.
+ * Caller should use analyzeTrendSafe for new code; analyzeTrend preserved for backward compatibility.
+ */
+export function analyzeTrendSafe(
+  points: TimeSeriesPoint[],
+  variableId: VariableId,
+  variableName: string,
+  unit: string,
+  regionName: string,
+  coordinates: [number, number],
+  useAnomaly = true
+): TrendAnalysisResponse {
+  const validation = validateTimeSeriesForAnalysis(points, variableId, useAnomaly);
+  
+  if (validation.state !== 'ready') {
+    const explanation = buildExplanation(validation, variableName, regionName);
+    return {
+      state: validation.state,
+      validation: {
+        totalPoints: validation.totalPoints,
+        validCount: validation.validCount,
+        missingCount: validation.missingCount,
+        minRequired: validation.minRequired,
+        messages: validation.messages,
+        state: validation.state,
+      },
+      explanation,
+    };
+  }
+  
+  try {
+    const result = analyzeTrend(
+      points,
+      variableId,
+      variableName,
+      unit,
+      regionName,
+      coordinates,
+      useAnomaly
+    );
+    return {
+      state: 'ready',
+      result,
+      validation: {
+        totalPoints: validation.totalPoints,
+        validCount: validation.validCount,
+        missingCount: validation.missingCount,
+        minRequired: validation.minRequired,
+        messages: validation.messages,
+        state: validation.state,
+      },
+    };
+  } catch (err) {
+    return {
+      state: 'error',
+      explanation: `Analysis failed: ${err instanceof Error ? err.message : String(err)}`,
+      validation: {
+        totalPoints: validation.totalPoints,
+        validCount: validation.validCount,
+        missingCount: validation.missingCount,
+        minRequired: validation.minRequired,
+        messages: validation.messages,
+        state: validation.state,
+      },
+    };
+  }
+}
+
+function buildExplanation(
+  validation: DataValidationResult,
+  variableName: string,
+  regionName: string
+): string {
+  const parts: string[] = [];
+  
+  if (validation.state === 'empty') {
+    parts.push(`No time series data is available for ${variableName} in ${regionName}.`);
+  } else if (validation.state === 'unavailable') {
+    parts.push(`Insufficient valid observations for ${variableName} in ${regionName}.`);
+    parts.push(`Required at least ${validation.minRequired} valid data points, but only ${validation.validCount} were found (${validation.totalPoints} total slots, ${validation.missingCount} missing).`);
+  } else if (validation.state === 'error') {
+    parts.push(`Data validation failed for ${variableName} in ${regionName}.`);
+    if (validation.messages.length > 0) {
+      parts.push(`Issues: ${validation.messages.join('; ')}.`);
+    }
+  }
+  
+  if (validation.messages.length > 0 && validation.state !== 'error') {
+    parts.push(`Data quality notes: ${validation.messages.join('; ')}.`);
+  }
+  
+  parts.push('No trend analysis can be performed with this dataset.');
+  return parts.join(' ');
+}
+
+/**
+ * generateScientificImplication
+ */
 function generateScientificImplication(
   variableId: VariableId,
   direction: 'Increasing' | 'Decreasing' | 'Stable',

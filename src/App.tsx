@@ -4,6 +4,8 @@ import {
   HotspotRegion, 
   TimeSeriesPoint, 
   TrendAnalysisResult, 
+  TrendAnalysisResponse, 
+  TrendAnalysisState,
   VariableId,
   ProvenanceTier
 } from './types/earthScience';
@@ -16,7 +18,10 @@ import {
   parseCustomCsv
 } from './services/nasaData';
 import { connectorRegistry } from './services/connectors';
-import { analyzeTrend, processTimeSeries } from './services/statistics';
+import { 
+  analyzeTrendSafe, 
+  processTimeSeries 
+} from './services/statistics';
 import { Navbar, AppMode, DataFeedSource } from './components/Navbar';
 import { EarthMap } from './components/EarthMap';
 import { VariableSelector } from './components/VariableSelector';
@@ -43,7 +48,8 @@ import {
   Database,
   ExternalLink,
   BookOpen,
-  Cpu
+  Cpu,
+  AlertCircle
 } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -66,6 +72,8 @@ export const App: React.FC = () => {
   const [actualRange, setActualRange] = useState<string | undefined>(undefined);
   const [latestValidObservation, setLatestValidObservation] = useState<string | undefined>(undefined);
   const [phase2Handoff, setPhase2Handoff] = useState<Phase2SeriesHandoff | null>(null);
+  
+  // Race-condition guards for async requests
   const liveQueryIdRef = useRef<number>(0);
   const section1Ref = useRef<HTMLElement | null>(null);
   const section2Ref = useRef<HTMLElement | null>(null);
@@ -111,14 +119,15 @@ export const App: React.FC = () => {
   // Time series generation
   const activePoints = useMemo(() => {
     if (customPoints) {
-      return customPoints;
+      // Filter out invalid points before returning
+      return customPoints.filter(p => p.raw !== null && isFinite(p.raw));
     }
     return generateCuratedTimeSeries(selectedRegion, selectedVariable);
   }, [selectedRegion, selectedVariable, customPoints]);
 
-  // Statistical trend analysis
-  const trendStats: TrendAnalysisResult = useMemo(() => {
-    const base = analyzeTrend(
+  // Statistical trend analysis (safe, non-throwing)
+  const analysis = useMemo<TrendAnalysisResponse>(() => {
+    return analyzeTrendSafe(
       activePoints,
       selectedVariable.id,
       selectedVariable.name,
@@ -127,13 +136,63 @@ export const App: React.FC = () => {
       selectedRegion.coordinates,
       true // use anomaly for trend
     );
+  }, [activePoints, selectedVariable, selectedRegion]);
+
+  // Reflect the derived data state so consumers see explicit states:
+  // 'loading' while a live feed is in flight with no series yet; otherwise
+  // analysis.state which is one of ready / unavailable / empty / error.
+  const effectiveDataState: TrendAnalysisState =
+    isLoadingFeed && activePoints.length === 0 ? 'loading' : analysis.state;
+
+  const trendStats = useMemo<TrendAnalysisResult>(() => {
+    if (analysis.state === 'ready' && analysis.result) {
+      return {
+        ...analysis.result,
+        provenance: provenanceTier,
+        provenanceSource,
+        statusMessage,
+      };
+    }
+
+    // Placeholder for non-ready states so downstream cards render safely.
+    const validPoints = activePoints.filter(p => p.raw !== null && isFinite(p.raw));
     return {
-      ...base,
+      variableId: selectedVariable.id,
+      variableName: selectedVariable.name,
+      unit: selectedVariable.unit,
+      regionName: selectedRegion.name,
+      coordinates: selectedRegion.coordinates,
+      startDate: activePoints[0]?.date ?? '',
+      endDate: activePoints[activePoints.length - 1]?.date ?? '',
+      sampleCount: validPoints.length,
+      missingCount: activePoints.length - validPoints.length,
+      slopePerYear: 0,
+      slopePerDecade: 0,
+      sensSlopePerDecade: 0,
+      totalChange: 0,
+      percentChange: 0,
+      direction: 'Stable' as const,
+      rSquared: 0,
+      olsSlope: 0,
+      olsIntercept: 0,
+      standardError: 0,
+      tStatistic: 0,
+      tPValue: 1,
+      mkS: 0,
+      mkVarS: 0,
+      mkZ: 0,
+      mkTau: 0,
+      mkPValue: 1,
+      significanceLevel: 'Not Significant' as const,
+      significanceStars: 'n.s.' as const,
+      significanceColor: '#94A3B8',
+      plainEnglishVerdict: analysis.explanation ?? 'Insufficient data for trend analysis.',
+      scientificImplication: analysis.explanation ?? 'Data unavailable for analysis.',
       provenance: provenanceTier,
       provenanceSource,
-      statusMessage,
+      statusMessage: analysis.explanation ?? statusMessage,
     };
-  }, [activePoints, selectedVariable, selectedRegion, provenanceTier, provenanceSource, statusMessage, requestedRange, actualRange]);
+  }, [analysis, selectedVariable, selectedRegion, provenanceTier, provenanceSource, statusMessage, activePoints]);
 
   // Fetch live connector data (or calibrated fallback) for coordinates with race guard
   const loadCoordinateData = async (
@@ -375,7 +434,63 @@ export const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Section 2: Earth Science Variable Selector */}
+            {/* Data availability state banner */}
+                {effectiveDataState !== 'ready' && (
+                  <div className={`rounded-2xl border p-5 sm:p-6 ${
+                    effectiveDataState === 'error'
+                      ? 'bg-ink-900 border-red-900/40'
+                      : effectiveDataState === 'unavailable'
+                        ? 'bg-ink-900 border-gold-400/30'
+                        : 'bg-ink-900 border-ink-700'
+                  }`}>
+                    <div className="flex items-start gap-3">
+                      <div className={`flex-shrink-0 rounded-lg p-2 ${
+                        effectiveDataState === 'error' ? 'bg-red-500/10' :
+                        effectiveDataState === 'unavailable' ? 'bg-gold-400/10' :
+                        'bg-ink-950'
+                      }`}>
+                        <AlertCircle className={`h-5 w-5 ${
+                          effectiveDataState === 'error' ? 'text-red-400' :
+                          effectiveDataState === 'unavailable' ? 'text-gold-300' :
+                          'text-silver-500'
+                        }`} />
+                      </div>
+                      <div className="flex-1 space-y-1">
+                        <h3 className={`font-semibold ${
+                          effectiveDataState === 'error' ? 'text-red-200' : 'text-silver-100'
+                        }`}>
+                          {effectiveDataState === 'loading' && 'Loading data feed...'}
+                          {effectiveDataState === 'empty' && 'No data available'}
+                          {effectiveDataState === 'unavailable' && 'Insufficient data for trend analysis'}
+                          {effectiveDataState === 'error' && 'Data unavailable'}
+                        </h3>
+                        <p className="text-xs sm:text-sm text-silver-400 leading-relaxed">
+                          {effectiveDataState === 'loading' && (
+                            'Retrieving satellite observations from NASA POWER, MERRA-2, and other feeds. This may take several seconds.'
+                          )}
+                          {effectiveDataState === 'empty' && (
+                            <>
+                              No observations were returned for <strong className="text-silver-200">{selectedVariable.name}</strong> at <strong className="text-silver-200">{selectedRegion.name}</strong>.
+                              Try selecting a different region or variable from the sections below.
+                            </>
+                          )}
+                          {effectiveDataState === 'unavailable' && (
+                            <>
+                              Only <strong className="text-silver-200">{analysis.validation?.validCount ?? trendStats.sampleCount}</strong> valid observations were found for {selectedVariable.name} at {selectedRegion.name},
+                              but a minimum of <strong className="text-gold-300">{analysis.validation?.minRequired ?? 2}</strong> is required to compute a statistically meaningful trend.
+                              Try selecting a different region or variable, or choose a longer time window.
+                            </>
+                          )}
+                          {effectiveDataState === 'error' && (
+                            analysis.explanation ?? 'Unable to retrieve or validate the requested data. The error has been logged; try a different selection.'
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Section 2: Earth Science Variable Selector */}
             <section ref={section2Ref} className="space-y-3 scroll-mt-24">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
