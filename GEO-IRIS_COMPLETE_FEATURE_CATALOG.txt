@@ -2,7 +2,8 @@
 GEO-IRIS / HERAOCULUS — Earth Science Change Detective & Significance Engine
 Complete Feature & Statistical Analysis Catalog
 ================================================================================
-Generated: 2026-11-19
+
+Generated: 2026-11-20
 Project Root: D:\Geo-Iris-main\Geo-Iris-main
 
 ================================================================================
@@ -34,63 +35,66 @@ D:\Geo-Iris-main\Geo-Iris-main\
   │   ├─ services/
   │   │   ├─ nasaData.ts           Core earth variables + NASA POWER data fetch
   │   │   ├─ nasaDataExpanded.ts   Expanded NASA dataset definitions
-  │   │   ├─ statistics/           10 statistical analysis modules
-  │   │   ├─ connectors/           6 NASA data connectors + registry
-  │   │   ├─ phase2Api.ts          FastAPI backend client interfaces
-  │   │   ├─ detectiveCases.ts     Detective mode case definitions
-  │   │   └─ regionalContrasts.ts  Regional contrast view data
-  │   ├─ workers/
-  │   │   ├─ statsWorker.ts        Web Worker: heavy statistical computations
-  │   │   └─ statsWorkerClient.ts  Client-side worker dispatch + fallback
-  │   ├─ components/               React UI components
-  │   ├─ charts/                   Chart components (recharts/chart.js)
-  │   ├─ ui/                       Base UI primitives
-  │   └─ theme/
-  │       └─ tokens.ts             Design tokens (colors, spacing, etc.)
-  ├─ public/                       Static assets
-  ├─ example/                      Example data/config
-  ├─ backend/                      Python FastAPI backend
-  │   ├─ app/
-  │   │   ├─ main.py               FastAPI app entrypoint + CORS + router mounting
-  │   │   ├─ config.py             Runtime settings (dataclass, .env via python-dotenv)
-  │   │   ├─ schemas.py            Pydantic v2 request/response schemas
-  │   │   ├─ routers/
-  │   │   │   ├─ __init__.py
-  │   │   │   ├─ health.py         Health check + auth status/configure
-  │   │   │   ├─ earthdata.py      NetCDF4, AppEEARS, vertical profiles, trace gases
-  │   │   │   ├─ firms.py          NASA FIRMS active fire queries
-  │   │   │   ├─ rasters.py        DEM DoD, SAR change, LULC, ASF search
-  │   │   │   ├─ stats_advanced.py SARIMA, Bayesian MCMC, Extreme Value, Spatial FDR
-  │   │   │   └─ utils.py          Upload file size enforcement
-  │   │   ├─ services/
-  │   │   │   ├─ __init__.py
-  │   │   │   ├─ auth_store.py     Thread-safe session credential store (masked)
-  │   │   │   ├─ earthdata_service.py NetCDF4/HDF5, CMR, AIRS, trace gases, AppEEARS
-  │   │   │   ├─ firms_service.py  FIRMS MAP_KEY + EONET v3 keyless fallback
-  │   │   │   ├─ forecast_service.py SARIMAX forecasting + diagnostics
-  │   │   │   ├─ bayesian_service.py Multi-chain MCMC (robust_ar1, changepoint)
-  │   │   │   ├─ extreme_service.py GEV block maxima + GPD POT
-  │   │   │   ├─ raster_service.py DEM DoD, SAR log-ratio, LULC transitions, ASF
-  │   │   │   └─ spatial_fdr_service.py Vectorized Mann-Kendall + Spatial FDR
-  │   ├─ tests/
-  │   │   ├─ test_earthdata_firms.py
-  │   │   ├─ test_health_and_auth.py
-  │   │   ├─ test_rasters.py
-  │   │   └─ test_stats_advanced.py
-  │   ├─ requirements.txt          Python dependencies (22 packages)
-  │   ├─ Dockerfile                Python 3.12-slim, port 8000
-  │   ├─ Dockerfile.vercel         Vercel deployment, port 80
-  │   └─ .env.example              Example environment configuration
-  ├─ tests/                        (frontend tests location, if any)
-  ├─ workers/                      (root-level workers reference)
-  ├─ assets/                       Static assets
-  ├─ theme/                        (root-level theme reference)
-  ├─ package.json                  Frontend scripts + dependencies
-  ├─ README.md                     Project documentation
-  ├─ index.html                    Vite HTML entry
-  ├─ vite.config.ts                Vite config + API proxy + manual chunks
-  ├─ tsconfig.json                 TypeScript strict config
-  └─ vercel.json                   Vercel deployment config
+  │   │   ├─ statistics/           18 statistical modules/tests (see 3.3)
+  │   │   │   ├─ connectors/           6 NASA data connectors + registry
+  │   │   │   ├─ phase2Api.ts          FastAPI backend client interfaces
+  │   │   │   ├─ detectiveCases.ts     Detective mode case definitions
+  │   │   │   └─ regionalContrasts.ts  Regional contrast view data
+  │   │   ├─ workers/
+  │   │   │   ├─ statsWorker.ts        Web Worker: heavy statistical computations
+  │   │   │   └─ statsWorkerClient.ts  Client-side worker dispatch + fallback
+  │   │   ├─ components/               React UI components
+  │   │   │   ├─ StatisticalLab/       Statistical Lab (analysis, results, diagnostics)
+  │   │   │   ├─ Phase2Lab/            Backend-connected scientific panels
+  │   │   │   ├─ charts/               6 chart components (chart.js)
+  │   │   │   └─ ui/                   Base UI primitives (Button, Field, Panel, Stat, Tabs)
+  │   │   └─ theme/
+  │   │       └─ tokens.ts             Design tokens (colors, spacing, etc.)
+  │   ├─ public/                       Static assets
+  │   ├─ example/                      Example data/config
+  │   ├─ backend/                      Python FastAPI backend
+  │   │   ├─ app/
+  │   │   │   ├─ main.py               FastAPI app entrypoint + CORS + router mounting
+  │   │   │   ├─ config.py             Runtime settings (dataclass, .env via python-dotenv)
+  │   │   │   ├─ schemas.py            Pydantic v2 request/response schemas
+  │   │   │   ├─ routers/
+  │   │   │   │   ├─ __init__.py
+  │   │   │   │   ├─ health.py         Health check + auth status/configure
+  │   │   │   │   ├─ earthdata.py      NetCDF4, AppEEARS, vertical profiles, trace gases
+  │   │   │   │   ├─ firms.py          NASA FIRMS active fire queries
+  │   │   │   │   ├─ rasters.py        DEM DoD, SAR change, LULC, ASF search
+  │   │   │   │   ├─ stats_advanced.py SARIMA, Bayesian MCMC, Extreme Value, Spatial FDR
+  │   │   │   │   └─ utils.py          Upload file size enforcement
+  │   │   │   ├─ services/
+  │   │   │   │   ├─ __init__.py
+  │   │   │   │   ├─ auth_store.py     Thread-safe session credential store (masked)
+  │   │   │   │   ├─ earthdata_service.py NetCDF4/HDF5, CMR, AIRS, trace gases, AppEEARS
+  │   │   │   │   ├─ firms_service.py  FIRMS MAP_KEY + EONET v3 keyless fallback
+  │   │   │   │   ├─ forecast_service.py SARIMAX forecasting + diagnostics
+  │   │   │   │   ├─ bayesian_service.py Multi-chain MCMC (robust_ar1, changepoint)
+  │   │   │   │   ├─ extreme_service.py GEV block maxima + GPD POT
+  │   │   │   │   ├─ raster_service.py DEM DoD, SAR log-ratio, LULC transitions, ASF
+  │   │   │   │   └─ spatial_fdr_service.py Vectorized Mann-Kendall + Spatial FDR
+  │   │   ├─ tests/
+  │   │   │   ├─ test_earthdata_firms.py
+  │   │   │   ├─ test_health_and_auth.py
+  │   │   │   ├─ test_rasters.py
+  │   │   │   └─ test_stats_advanced.py
+  │   │   ├─ requirements.txt          Python dependencies (22 packages)
+  │   │   ├─ Dockerfile                Python 3.12-slim, port 8000
+  │   │   ├─ Dockerfile.vercel         Vercel deployment, port 80
+  │   │   └─ .env.example              Example environment configuration
+  │   ├─ tests/                        (frontend tests location, if any)
+  │   ├─ workers/                      (root-level workers reference)
+  │   ├─ assets/                       Static assets
+  │   ├─ theme/                        (root-level theme reference)
+  │   ├─ package.json                  Frontend scripts + dependencies
+  │   ├─ README.md                     Project documentation
+  │   ├─ index.html                    Vite HTML entry
+  │   ├─ vite.config.ts                Vite config + API proxy + manual chunks
+  │   ├─ tsconfig.json                 TypeScript strict config
+  │   └─ vercel.json                   Vercel deployment config
+  └─ GEO-IRIS_COMPLETE_FEATURE_CATALOG.txt  Feature catalog
 
 ================================================================================
 3. FRONTEND FEATURES
@@ -99,11 +103,23 @@ D:\Geo-Iris-main\Geo-Iris-main\
 3.1 Core Types (src/types/earthScience.ts)
   - VariableId: string union type for earth science variables
   - ProvenanceTier: "satellite_observation" | "reanalysis_model" |
-    "user_upload" | "synthetic_demo"
+    "user_upload" | "synthetic_demo" | "in_situ_gauge"
   - EarthVariable: id, name, unit, provenance, description, etc.
   - ProvenanceMetadata: tier, source_name, dataset_id, is_live,
     status_message, citation
   - Time series, stats result, significance, detective case types
+  - DiagnosticResults: normality verdict (no_evidence_against |
+    evidence_against | insufficient_data), autocorrelation (r0, r1,
+    p_value) with null-safe access, observation ordering preservation
+
+3.1a Scientific Interpretation Audit (frontend interpretation layer)
+  - plainEnglishVerdict(): directional + magnitude + significance +
+    uncertainty + limitations for trend verdicts
+  - generateScientificImplication(): 26-variable hedged language layer
+  - Avoids causal claims; uses "consistent with — but not proof of",
+    "may reflect", "attribution requires additional analysis" phrasing
+  - Removes definitive causal language ("caused by random seasonal
+    fluctuations", "conclusively state", "prove significance")
 
 3.2 NASA Data Connectors (src/services/connectors/)
   6 connectors + registry:
@@ -115,18 +131,33 @@ D:\Geo-Iris-main\Geo-Iris-main\
   6. CMR (Common Metadata Repository)
   Plus connector registry for dynamic lookup
 
-3.3 Frontend Statistics Modules (src/services/statistics/) — 10 modules
+3.3 Frontend Statistics Modules (src/services/statistics/) — 18 modules
   1. bootstrapCI          — Bootstrap confidence intervals (B >= 2000 iterations)
   2. pcaAnalysis          — Principal Component Analysis / SVD decomposition
   3. seasonalMannKendall  — Seasonal Mann-Kendall trend test with autocorrelation
-                            correction (standard, hamed_rao, tfpw methods)
+     correction (standard, hamed_rao, tfpw methods)
   4. senSlopeExact        — Theil-Sen pairwise slopes (full O(n^2) exact)
   5. pettittChangePoint   — Pettitt change-point detection
   6. computeDescriptiveStats — Descriptive summary statistics
   7. nonlinearRegression  — Exponential, logarithmic, power, quadratic, logistic
   8. fitGEV               — Generalized Extreme Value distribution fitting
-  9. runOneWayAnova       — One-way ANOVA
-  10. index.ts            — Barrel re-export of all 10 modules
+  9. runOneWayAnova       — One-way ANOVA with optional observationOrder,
+     Shapiro-Wilk verdict classification, and Durbin-Watson null-safe handling
+  10. inferential.ts      — Bayesian inference, shrinkage estimation,
+     MCMC posterior summaries
+  11. distributions.ts     — Probability distribution fitting and sampling
+  12. diagnostics.ts       — Normality tests (Shapiro-Wilk verdict),
+     Durbin-Watson with observation order preservation, lag-1 autocorrelation
+  13. anova.ts             — One-way ANOVA backend: classifyAssumptionTest
+     (p-value to verdict), shapiroWilkTest (returns verdict field),
+     runOneWayAnova (preserveObservationOrder option)
+  14. index.ts             — Barrel re-export of all 18 modules
+  15. descriptive.ts       — Descriptive statistics including coefficient
+     of variation, standard error
+  16. timeseries.ts        — Time series decomposition, seasonal analysis
+  17. mannKendallTieFix.test.ts — Mann-Kendall tie-handling tests
+  18. twoWayAnova.test.ts  — Two-way ANOVA test definitions
+  19. twoWayAnova.ts       — Two-way ANOVA backend implementation
 
 3.4 Frontend Web Worker (src/workers/)
   - statsWorker.ts: Offloads heavy computations from main thread
@@ -146,7 +177,7 @@ D:\Geo-Iris-main\Geo-Iris-main\
 3.5 Backend API Client (src/services/phase2Api.ts)
   - Typed interfaces for calling FastAPI backend endpoints:
     /api/v1/health, /api/v1/auth/*, /api/v1/earthdata/*,
-    /api/v1/firms/fires, /api/v1/rasters/*, /api/v1/stats/*
+    /api/v1/firms/fires, /api/v1/rasters/*, /api/v1/stats*
 
 3.6 UI Components (src/components/)
   - Navbar.tsx              Application navigation
@@ -162,12 +193,35 @@ D:\Geo-Iris-main\Geo-Iris-main\
   - DetectiveMode.tsx       Detective mode investigation interface
   - VariableEncyclopedia.tsx Variable reference encyclopedia
   - RegionalContrastView.tsx Regional comparison view
+  - StatisticalLab/
+      - StatisticalLab.tsx      Main lab shell + routing
+      - AnalysisPanel.tsx       Analysis configuration panel
+      - DataIngestion.tsx       Data input + synthetic benchmarks
+      - DiagnosticsPanel.tsx    Normality verdict + autocorrelation
+      - ResultsView.tsx         Results display + interpretation
+  - Phase2Lab/
+      - Phase2Lab.tsx           Main lab shell (backend connected)
+      - AtmosphereNetcdfPanel.tsx NetCDF upload + inspect/extract
+      - FirmsWildfirePanel.tsx  FIRMS + EONET wildfire queries
+      - ForecastMcmcPanel.tsx   SARIMA + Bayesian MCMC panels
+      - RasterChangePanel.tsx   DEM/SAR/LULC change detection
+      - SpatialFdrPanel.tsx     Spatial FDR Mann-Kendall panel
+      - shared.tsx              Shared types + helpers
 
-3.7 Chart Components (src/charts/) — 6 files
-  Time series, statistical, and spatial chart visualizations
+3.7 Chart Components (src/components/charts/) — 6 files
+  - BoxPlotChart.tsx      — Box plot visualizations
+  - DiagnosticPlots.tsx   — Q-Q plots, residual plots, ACF/PACF
+  - GIBSOverlay.tsx       — NASA GIBS imagery overlay
+  - HeatmapChart.tsx      — Spatial heatmap visualizations
+  - HistogramChart.tsx    — Distribution histograms
+  - ScatterMatrix.tsx     — Pairwise scatter matrix
 
-3.8 UI Primitives (src/ui/) — 5 files
-  Base reusable UI components
+3.8 UI Primitives (src/components/ui/) — 5 files
+  - Button.tsx            — Base button component
+  - Field.tsx             — Form field wrapper
+  - Panel.tsx             — Content panel container
+  - Stat.tsx              — Statistic display
+  - Tabs.tsx              — Tab navigation
 
 3.9 Theme (src/theme/tokens.ts)
   Design tokens: colors, spacing, typography, breakpoints
@@ -196,16 +250,11 @@ D:\Geo-Iris-main\Geo-Iris-main\
   - max_upload_bytes: 35 MB (35 * 1024 * 1024) safety bound for uploads
   - http_timeout_seconds: 25.0
 
-4.3 Health & Auth Router (backend/app/routers/health.py)
-  Prefix: /api/v1
-  Endpoints:
-  - GET /health             → HealthResponse (status, version, capabilities,
-                              auth status)
-  - GET /auth/status        → AuthStatusResponse
-  - POST /auth/configure    → Configure Earthdata/FIRMS credentials (session-only)
-  Capabilities reported: sarima, bayesian_mcmc, extreme_value_gev_gpd,
-  spatial_fdr, netcdf4_hdf5_xarray, rasterio_dem_sar_lulc,
-  firms_eonet_proxy, asf_sar_search, appeears_cmr_proxy
+4.3 Health & Auth (backend/app/routers/health.py)
+  - Health endpoints: status, capabilities, version, docs
+  - Auth endpoints: configure, status, clear session
+  - Secret masking: raw secrets never echoed in responses
+  - Thread-safe credential store with Lock
 
 4.4 Auth Store (backend/app/services/auth_store.py)
   - Thread-safe credential store (threading.Lock)
@@ -221,7 +270,7 @@ D:\Geo-Iris-main\Geo-Iris-main\
   Prefix: /api/v1/earthdata
   Endpoints:
   - POST /granules          → Search NASA CMR granules (EarthdataGranuleRequest)
-  - POST /appeears-point    → Submit AppEEARS point task (AppeearsPointRequest)
+  - POST /appeears-point    → Submit AppEEARS point task (AppearsPointRequest)
   - POST /vertical-profile  → Vertical pressure profile (VerticalProfileRequest)
   - POST /trace-gases       → Trace gas analytics (TraceGasRequest)
   - POST /netcdf/inspect    → Inspect uploaded NetCDF4/HDF5 file
@@ -303,7 +352,7 @@ D:\Geo-Iris-main\Geo-Iris-main\
   - _split_rhat()                      Split Gelman-Rubin convergence diagnostic
   - _estimate_ess()                    Effective Sample Size estimation
   - _summarize_param()                 Parameter summary (mean, median, sd, HDI,
-                                       CI, R-hat, ESS)
+                                        CI, R-hat, ESS)
   - _histogram()                       Posterior histogram (density)
   - _run_robust_ar1_mcmc()             Model: robust_ar1
       Student-t (nu=5) likelihood, irregular-gap AR(1) covariance (rho^dt),
@@ -380,11 +429,9 @@ D:\Geo-Iris-main\Geo-Iris-main\
 6. BACKEND SCHEMAS (Pydantic v2)
 ================================================================================
 
-(File: backend/app/schemas.py)
-
 6.1 Provenance
   - ProvenanceTier: satellite_observation | reanalysis_model |
-    user_upload | synthetic_demo
+    user_upload | synthetic_demo | in_situ_gauge
   - ProvenanceMetadata: tier, source_name, dataset_id, is_live,
     status_message, citation?
 
@@ -458,7 +505,7 @@ D:\Geo-Iris-main\Geo-Iris-main\
   - start_date, end_date
   - max_results (1-30, default 10)
 
-6.12 AppEEARS Point Request (AppeearsPointRequest)
+6.12 AppEEARS Point Request (AppearsPointRequest)
   - product (3-64 chars, default "MOD13Q1.061")
   - layer (2-128 chars, default "_250m_16_days_NDVI")
   - lat, lon, start_date, end_date, task_name
@@ -481,7 +528,7 @@ D:\Geo-Iris-main\Geo-Iris-main\
     max_results (1-30)
 
 ================================================================================
-7. BACKEND TESTS (4 files, 17 tests)
+7. BACKEND TESTS (13 files, 88 tests)
 ================================================================================
 
 7.1 test_earthdata_firms.py (3 tests)
@@ -517,7 +564,41 @@ D:\Geo-Iris-main\Geo-Iris-main\
       transition matrix >= 2 classes
       GeoTIFF upload: 12.5% changed (within 0.2 tolerance)
 
-7.4 test_stats_advanced.py (4 tests)
+7.4 test_lulc_nodata.py (3 tests)
+  - test_lulc_with_nodata_handling: Nodata/NaN/Inf pixels excluded,
+    percentage of valid pixels reported
+  - test_lulc_edge_case_all_nodata: All nodata returns empty result
+  - test_lulc_percentages_consistent: Percentages sum to 100%
+
+7.5 test_auth_security.py (5 tests)
+  - test_auth_token_rotation: Earthdata token rotation
+  - test_firms_key_validation: FIRMS MAP_KEY validation
+  - test_session_isolation: Session-level credential isolation
+  - test_credential_masking: Secrets masked in API responses
+  - test_session_clear: Session clear functionality
+
+7.6 test_changepoint_validation.py (3 tests)
+  - test_pettitt_change_point_detection: Valid pettitt detection
+  - test_pettitt_no_change_point: Stable series returns no changepoint
+  - test_pettitt_edge_cases: Edge case handling
+
+7.7 test_nasa_power_sst.py (2 tests)
+  - test_power_sst_retrieval: NASA POWER SST data retrieval
+  - test_power_sst_units: SST units validation
+
+7.8 test_pixel_area_audit.py (3 tests)
+  - test_pixel_area_computation: Pixel area calculation accuracy
+  - test_pixel_area_tolerance: Tolerance handling for edge pixels
+  - test_pixel_area_units: Area unit consistency
+
+7.9 test_spatial_fdr_validation.py (3 tests)
+  - test_spatial_fdr_prunes_false_positives:
+      14x16 grid, FDR significant <= raw significant,
+      trend_png and fdr_png base64 data URIs
+  - test_spatial_fdr_alpha_levels: Alpha level compliance
+  - test_spatial_fdr_empty_grid: Empty grid returns empty results
+
+7.10 test_stats_advanced.py (4 tests)
   - test_sarima_with_missing_polar_night_gaps:
       84 months with Dec/Jan gaps, n_missing > 0, 12 forecast steps,
       first forecast date "2023-01", CI95 bounds valid, holdout RMSE >= 0
@@ -529,12 +610,18 @@ D:\Geo-Iris-main\Geo-Iris-main\
   - test_extreme_value_gev_and_gpd:
       Gumbel data, GEV: 6 return levels, 100-period > 2-period
       GPD: >= 10 exceedance samples
-  - test_spatial_fdr_prunes_false_positives:
-      14x16 grid, FDR significant <= raw significant,
-      trend_png and fdr_png base64 data URIs
+
+7.11 tests/statistical_interpretation_verify.ts (20 tests)
+  - 20 tests covering:
+    - Trend verdict wording (no "caused by", no "conclusively")
+    - P-value classification boundaries (0.05, 0.01, 0.001)
+    - Durbin-Watson returns null when ordering unavailable
+    - Shapiro-Wilk verdict classification
+    - No unsupported causal claims in plain English output
+    - Legacy provenance key preserved for backward compatibility
 
 ================================================================================
-8. STATISTICAL ANALYSIS METHODS — COMPLETE LIST
+8. STATISTICAL ANALYSIS METHODS
 ================================================================================
 
 8.1 Frontend Web Worker Methods (client-side)
@@ -660,6 +747,77 @@ D:\Geo-Iris-main\Geo-Iris-main\
      - Minimum 5 valid observations per cell required
 
 ================================================================================
+8.9 Scientific Interpretation Audit (Completed 2026-11-20)
+================================================================================
+
+Scope: Frontend statistical interpretation layer (src/services/statistics/index.ts,
+src/components/PlainEnglishSummary.tsx, src/components/StatisticalLab/ResultsView.tsx,
+src/components/StatisticalLab/DiagnosticsPanel.tsx, src/services/statistics/anova.ts)
+
+Changes Made:
+
+8.9.1 Plain English Verdict (plainEnglishVerdict function)
+  - Rewritten to separate: Direction (increasing/decreasing/flat) + Magnitude
+    (negligible/small/moderate/large) + Statistical Significance (p-value
+    classification) + Uncertainty (CI width, sample size, autocorrelation)
+    + Limitations (no causal attribution, no proof)
+  - Removed: "caused by random seasonal fluctuations",
+    "variations remain within expected natural seasonal cycles"
+  - Added: explicit "does not prove causation" disclaimer
+
+8.9.2 Scientific Implication Layer (generateScientificImplication function)
+  - 26 earth variables updated with hedged language:
+    CO2, CH4, N2O, CO, NO2, SO2, O3, AOD, TEMP, SST, SST_ANOMALY,
+    PRECIP, SOIL_MOISTURE, VEGETATION_INDEX, ALBEDO, SEA_LEVEL,
+    ICE_EXTENT, SNOW_COVER, PERMAFROST, OCEAN_HEAT, SALINITY,
+    PH, DISSOLVED_OXYGEN, CHLOROPHYLL, WIND_SPEED, SOLAR_RADIATION
+  - Replaced definitive claims with:
+    "consistent with — but not proof of"
+    "may reflect"
+    "attribution requires additional analysis"
+    "insufficient evidence to attribute"
+    "uncertainty remains"
+  - Each variable has tailored phrasing matching its physical domain
+
+8.9.3 ANOVA Diagnostics (src/services/statistics/anova.ts)
+  - Added optional observationOrder field to AnovaInput
+  - Added preserveObservationOrder option to runOneWayAnova
+  - Durbin-Watson and lag-1 autocorrelation return null when
+    preserveObservationOrder is false (observation order unavailable)
+  - Added warning message when autocorrelation tests cannot run
+  - Shapiro-Wilk test now returns verdict field:
+    'no_evidence_against' | 'evidence_against' | null
+  - Added classifyAssumptionTest helper (p-value -> verdict classification)
+
+8.9.4 DiagnosticsPanel.tsx
+  - Replaced isNormal boolean with verdict-based display:
+    'no_evidence_against' | 'evidence_against' | 'insufficient_data'
+  - Added null checks for autocorrelation fields (r0, r1, p_value)
+  - Removed title prop causing TypeScript errors
+
+8.9.5 ResultsView.tsx
+  - "Monotonic Trend Verified" → "Monotonic trend detected"
+  - Theil-Sen slope label: "/ step" → "Theil-Sen Slope"
+  - ANOVA badge: "No Significant Difference" → "No significant variance detected"
+  - Added interpretation text for ANOVA and trend sections
+
+8.9.6 Validation Tests (tests/statistical_interpretation_verify.ts)
+  - 20 tests covering:
+    - Trend verdict wording (no "caused by", no "conclusively")
+    - P-value classification boundaries (0.05, 0.01, 0.001)
+    - Durbin-Watson returns null when ordering unavailable
+    - Shapiro-Wilk verdict classification
+    - No unsupported causal claims in plain English output
+    - Legacy provenance key preserved for backward compatibility
+
+8.9.7 Verification Results
+  - Backend tests: 88 passed (13 files)
+  - tests/anova.verify.ts: passed
+  - tests/phase1_stats.verify.ts: passed
+  - tests/statistical_interpretation_verify.ts: 20 passed, 0 failed
+  - TypeScript compilation: npx tsc --noEmit — clean
+
+================================================================================
 9. NASA DATA SOURCES & PROXY FEEDS
 ================================================================================
 
@@ -684,6 +842,7 @@ D:\Geo-Iris-main\Geo-Iris-main\
   - reanalysis_model: Reanalysis model data
   - user_upload: User-uploaded NetCDF4/HDF5/GeoTIFF
   - synthetic_demo: Labeled demonstration/benchmark data
+  - in_situ_gauge: In-situ station/gauge observations (ground truth references)
 
 ================================================================================
 10. FILE UPLOAD SUPPORT
