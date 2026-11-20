@@ -11,6 +11,13 @@ export interface AnovaGroup {
 export interface AnovaInput {
   response: number[];
   group: string[];
+  /**
+   * Optional array preserving the original observation order (e.g. temporal index).
+   * Required for Durbin-Watson and lag-1 autocorrelation to be valid. If omitted,
+   * residuals are computed group-by-group in arbitrary order, making temporal
+   * autocorrelation diagnostics meaningless; they are reported as null.
+   */
+  observationOrder?: number[];
 }
 
 export interface OneWayAnovaResult {
@@ -29,7 +36,7 @@ export interface OneWayAnovaResult {
   assumptions: {
     brownForsythe: { F: number; p: number; df1: number; df2: number } | null;
     bartlett: { T: number; p: number } | null;
-    shapiroWilk: { W: number; p: number; n: number } | null;
+    shapiroWilk: { W: number; p: number; n: number; verdict: 'no_evidence_against' | 'evidence_against' } | null;
     durbinWatson: number | null;
     lag1Autocorr: number | null;
     warning: string | null;
@@ -190,8 +197,9 @@ function median(arr: number[]): number {
 }
 
 // ---- Main ANOVA ----
-export function runOneWayAnova(data: AnovaInput, options?: { alpha?: number }): OneWayAnovaResult {
+export function runOneWayAnova(data: AnovaInput, options?: { alpha?: number; preserveObservationOrder?: boolean }): OneWayAnovaResult {
   const alpha = options?.alpha ?? 0.05;
+  const preserveOrder = options?.preserveObservationOrder === true && data.observationOrder && data.observationOrder.length === data.response.length;
   const groups = new Map<string, number[]>();
   const nDropped: number[] = [];
   // collect
@@ -357,24 +365,30 @@ export function runOneWayAnova(data: AnovaInput, options?: { alpha?: number }): 
     shapiro = shapiroWilkTest(residuals);
   }
 
-  // Durbin-Watson on residuals (if ordered)
+  // Durbin-Watson on residuals (requires preserved observation ordering)
   let dw: number | null = null;
   let r1: number | null = null;
-  if (residuals.length > 2) {
-    let num = 0, den = 0;
-    for (let i = 1; i < residuals.length; i++) num += (residuals[i] - residuals[i - 1]) ** 2;
-    for (const r of residuals) den += r * r;
-    dw = num / den;
-    // lag-1 autocorr
-    const m = mean(residuals);
-    let c0 = 0, c1 = 0;
-    for (let i = 0; i < residuals.length; i++) c0 += (residuals[i] - m) ** 2;
-    for (let i = 1; i < residuals.length; i++) c1 += (residuals[i] - m) * (residuals[i - 1] - m);
-    r1 = c1 / c0;
-  }
   let warning: string | null = null;
-  if (r1 !== null && Math.abs(r1) > 0.3) {
+  if (preserveOrder) {
+    if (residuals.length > 2) {
+      let num = 0, den = 0;
+      for (let i = 1; i < residuals.length; i++) num += (residuals[i] - residuals[i - 1]) ** 2;
+      for (const r of residuals) den += r * r;
+      dw = den > 0 ? num / den : 2.0;
+      // lag-1 autocorrelation
+      const m = mean(residuals);
+      let c0 = 0, c1 = 0;
+      for (let i = 0; i < residuals.length; i++) c0 += (residuals[i] - m) ** 2;
+      for (let i = 1; i < residuals.length; i++) c1 += (residuals[i] - m) * (residuals[i - 1] - m);
+      r1 = c0 > 0 ? c1 / c0 : 0;
+    }
+  }
+  if (!preserveOrder) {
+    warning = 'Observation ordering not available; Durbin-Watson and lag-1 autocorrelation are not valid temporal diagnostics.';
+  } else if (r1 !== null && Math.abs(r1) > 0.3) {
     warning = 'Residuals show substantial lag-1 autocorrelation (r1=' + r1.toFixed(3) + '); ANOVA p-values may be too small for autocorrelated earth-science series.';
+  } else if (preserveOrder && r1 === null) {
+    warning = 'Lag-1 autocorrelation could not be computed (insufficient data after ordering constraints).';
   }
 
   // Post-hoc Tukey (all pairs)
@@ -483,6 +497,29 @@ export interface ShapiroWilkResult {
   W: number;
   p: number;
   n: number;
+  /**
+   * Statistical interpretation of the test outcome.
+   * - 'no_evidence_against': p > alpha. We failed to reject the null hypothesis
+   *   of normality. This is NOT evidence that the data are normal; it only means
+   *   the test lacked power to detect a departure.
+   * - 'evidence_against': p <= alpha. Reject the null hypothesis; evidence
+   *   against normality.
+   */
+  verdict: 'no_evidence_against' | 'evidence_against';
+}
+
+/**
+ * Classify a hypothesis-test outcome for assumption diagnostics.
+ *
+ * Never equates p > alpha with "assumption is true" (failure to reject is not
+ * proof). Returns:
+ *  - 'no_evidence_against'  : p > alpha, fail to reject the null hypothesis
+ *  - 'evidence_against'     : p <= alpha, reject the null hypothesis
+ *  - 'insufficient_data'    : test statistic unavailable (null/undefined)
+ */
+export function classifyAssumptionTest(p: number | null | undefined, alpha = 0.05): 'no_evidence_against' | 'evidence_against' | 'insufficient_data' {
+  if (p === null || p === undefined || !Number.isFinite(p)) return 'insufficient_data';
+  return p > alpha ? 'no_evidence_against' : 'evidence_against';
 }
 
 /**
@@ -563,7 +600,9 @@ export function shapiroWilkTest(values: number[]): ShapiroWilkResult | null {
   }
   p = Math.max(0, Math.min(1, p));
 
-  return { W: Wclamped, p, n };
+  const verdict = p > 0.05 ? 'no_evidence_against' : 'evidence_against';
+
+  return { W: Wclamped, p, n, verdict };
 }
 
 function isFinite(v: number): boolean {

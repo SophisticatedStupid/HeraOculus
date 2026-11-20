@@ -1,11 +1,17 @@
-"""Health check and session credential configuration routes."""
+"""Health check and service credential status routes.
+
+Credential configuration is server-managed via environment variables only
+(EARTHDATA_TOKEN, EARTHDATA_USERNAME, EARTHDATA_PASSWORD, NASA_FIRMS_MAP_KEY).
+There is no public per-user credential configuration endpoint because this
+deployment has no authentication infrastructure.
+"""
 
 from __future__ import annotations
 
 from fastapi import APIRouter
 
 from ..config import settings
-from ..schemas import AuthConfigRequest, AuthStatusResponse, HealthResponse
+from ..schemas import AuthStatusResponse, HealthResponse
 from ..services.auth_store import auth_store
 
 router = APIRouter(prefix="/api/v1", tags=["Health & Auth"])
@@ -34,15 +40,3 @@ def get_health() -> HealthResponse:
 @router.get("/auth/status", response_model=AuthStatusResponse)
 def get_auth_status() -> AuthStatusResponse:
     return AuthStatusResponse(**auth_store.status())
-
-
-@router.post("/auth/configure", response_model=AuthStatusResponse)
-def configure_auth(payload: AuthConfigRequest) -> AuthStatusResponse:
-    updated = auth_store.configure(
-        earthdata_token=payload.earthdata_token,
-        earthdata_username=payload.earthdata_username,
-        earthdata_password=payload.earthdata_password,
-        firms_map_key=payload.firms_map_key,
-        clear_session=payload.clear_session,
-    )
-    return AuthStatusResponse(**updated)

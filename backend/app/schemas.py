@@ -22,14 +22,6 @@ class ProvenanceMetadata(BaseModel):
     citation: Optional[str] = None
 
 
-class AuthConfigRequest(BaseModel):
-    earthdata_token: Optional[str] = Field(default=None, description="Earthdata Login Bearer token (session-only)")
-    earthdata_username: Optional[str] = Field(default=None, description="Earthdata Login username (session-only)")
-    earthdata_password: Optional[str] = Field(default=None, description="Earthdata Login password (session-only)")
-    firms_map_key: Optional[str] = Field(default=None, description="NASA FIRMS MAP_KEY (session-only)")
-    clear_session: bool = False
-
-
 class AuthStatusResponse(BaseModel):
     earthdata_configured: bool
     earthdata_source: str

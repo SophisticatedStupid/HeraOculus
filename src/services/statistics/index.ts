@@ -324,11 +324,11 @@ export function analyzeTrend(
 
   let plainEnglishVerdict = '';
   if (significanceLevel === 'Extremely Significant' || significanceLevel === 'Highly Significant' || significanceLevel === 'Significant') {
-    plainEnglishVerdict = `A statistically confirmed ${significanceLevel.toLowerCase()} ${dirText} trend was detected in ${variableName} for ${regionName}. Over the past ${Math.round(totalDurationYears)} years, the variable changed by ${totalChange > 0 ? '+' : ''}${totalChange.toFixed(2)} ${unit} (rate of ${totalChange > 0 ? '+' : '-'}${rateFmt} ${unit}/decade, p ${pFmt}). This persistent shift is not caused by random seasonal fluctuations.`;
+    plainEnglishVerdict = `A statistically detectable monotonic ${dirText} trend was detected in ${variableName} for ${regionName}. Over the analysis period (${Math.round(totalDurationYears)} years), the estimated change is ${totalChange > 0 ? '+' : ''}${totalChange.toFixed(2)} ${unit} (rate of ${totalChange > 0 ? '+' : '-'}${rateFmt} ${unit}/decade, p ${pFmt}). The estimated slope has an approximate standard error of ${standardError.toFixed(3)} ${unit}/year; treat the magnitude as an estimate with uncertainty, not an exact value. Statistical significance indicates the observed pattern is unlikely under a null hypothesis of no trend; it does not establish causality or identify a specific physical mechanism. Natural variability cannot be ruled out as a partial contributor.`;
   } else if (significanceLevel === 'Marginally Significant') {
-    plainEnglishVerdict = `A weak or emerging ${dirText} trend is visible (${totalChange > 0 ? '+' : ''}${rateFmt} ${unit}/decade, p = ${p.toFixed(3)}), but it falls slightly short of rigorous 95% scientific certainty (p < 0.05). Additional observational years are required to rule out natural decadal variability.`;
+    plainEnglishVerdict = `A weak or emerging ${dirText} trend is visible (${totalChange > 0 ? '+' : '-'}${rateFmt} ${unit}/decade, p = ${p.toFixed(3)}), but it falls slightly short of conventional 95% certainty (p < 0.05). The evidence is suggestive but not conclusive; additional observational years would help distinguish a directional signal from natural decadal variability.`;
   } else {
-    plainEnglishVerdict = `No statistically significant monotonic trend was detected in ${variableName} for ${regionName} (p = ${p.toFixed(3)}). Variations observed over time remain within expected natural seasonal cycles and inter-annual climate oscillations.`;
+    plainEnglishVerdict = `No statistically significant monotonic trend was detected in ${variableName} for ${regionName} (p = ${p.toFixed(3)}). This does not prove the absence of change; it indicates the data do not provide sufficient evidence to conclude a directional trend is present beyond random variation. Observed variations may reflect natural seasonal cycles and inter-annual oscillations, which cannot be ruled out.`;
   }
 
   const scientificImplication = generateScientificImplication(variableId, direction, significanceLevel, slopePerDecade, unit, regionName);
@@ -377,123 +377,126 @@ function generateScientificImplication(
   regionName: string
 ): string {
   if (significance === 'Not Significant') {
-    return `In ${regionName}, the system currently maintains dynamic equilibrium for this variable, exhibiting resilient inter-annual buffering against directional drift.`;
+    return `In ${regionName}, no statistically detectable directional trend was identified for this variable. This is not evidence of a static or unchanging system; it means the data do not show a clear monotonic pattern beyond natural variability. Physical processes may still be active, but the current record does not resolve a sustained directional change.`;
   }
+
+  const magnitude = Math.abs(ratePerDecade).toFixed(2);
+  const dirWord = direction === 'Increasing' ? 'an increasing' : 'a decreasing';
 
   switch (variableId) {
     case 'temp_air':
     case 'lst_day':
       return direction === 'Increasing'
-        ? `Sustained thermal warming (+${Math.abs(ratePerDecade).toFixed(2)} ${unit}/decade) accelerates latent heat fluxes, enhances evaporation demands, and alters regional atmospheric circulation patterns.`
-        : `Cooling trend reflects regional radiative forcing anomalies, cloud cover feedbacks, or aerosol dimming effects.`;
+        ? `The data show ${dirWord} thermal trend (~+${magnitude} ${unit}/decade) in ${regionName}. This is consistent with — but not proof of — regional warming associated with radiative forcing, land-surface feedback, or circulation shifts. Attributing this to any specific mechanism requires controlled attribution studies beyond a monotonic trend test.`
+        : `The data show ${dirWord} thermal trend (~${magnitude} ${unit}/decade cooling) in ${regionName}. Possible contributors include regional radiative anomalies, cloud-cover feedbacks, or aerosol effects; establishing causation requires further analysis.`;
 
     case 'precip':
       return direction === 'Increasing'
-        ? `Intensification of regional hydrological cycling (+${Math.abs(ratePerDecade).toFixed(1)} ${unit}/decade) indicates elevated atmospheric water-holding capacity under Clausius-Clapeyron dynamics, potentially raising extreme flood frequencies.`
-        : `Persistent precipitation deficit (-${Math.abs(ratePerDecade).toFixed(1)} ${unit}/decade) exacerbates meteorological drought risk, vegetative moisture stress, and groundwater recharge depletion.`;
+        ? `An increasing precipitation trend (~+${magnitude} ${unit}/decade) was detected in ${regionName}. This may be consistent with changes in regional moisture transport or circulation, but a monotonic trend alone does not identify the physical driver.`
+        : `A decreasing precipitation trend (~${magnitude} ${unit}/decade) was detected in ${regionName}. This could relate to shifting moisture transport, circulation changes, or other factors; attributing the cause requires additional analysis.`;
 
     case 'ndvi':
       return direction === 'Decreasing'
-        ? `Decline in vegetation photosynthetic activity (-${Math.abs(ratePerDecade).toFixed(3)}/decade) directly tracks biomass loss, canopy fragmentation from land clearing, or severe chronic water stress.`
-        : `Greenness expansion (+${Math.abs(ratePerDecade).toFixed(3)}/decade) indicates vegetative colonization, prolonged growing seasons, or agricultural intensification.`;
+        ? `A declining NDVI trend (~${magnitude}/decade) was detected in ${regionName}, consistent with reduced vegetation greenness. Possible explanations include land-cover change, water stress, or disturbance; a trend test alone does not distinguish among them.`
+        : `An increasing NDVI trend (~+${magnitude}/decade) was detected in ${regionName}, consistent with increasing vegetation greenness. This may reflect land management, climate, or recovery from disturbance; attribution requires additional evidence.`;
 
     case 'soil_moist':
       return direction === 'Decreasing'
-        ? `Continuous root-zone desiccation (-${Math.abs(ratePerDecade).toFixed(2)} ${unit}/decade) threatens agricultural yields and reduces convective precipitation recycling.`
-        : `Increased soil saturation elevates flood susceptibility and shifts soil microbial respiration rates.`;
+        ? `A decreasing soil-moisture trend (~${magnitude} ${unit}/decade) was detected in ${regionName}. This may indicate drying conditions, but could also reflect changes in measurement or land use; the trend alone does not establish the cause.`
+        : `An increasing soil-moisture trend (~+${magnitude} ${unit}/decade) was detected in ${regionName}, consistent with wetter conditions. Multiple physical pathways could produce this; the trend does not by itself identify the mechanism.`;
 
     case 'evapo':
       return direction === 'Decreasing'
-        ? `Suppression of evapotranspiration reveals depleted surface water availability or reduced stomatal transpiration from forest loss.`
-        : `Elevated evapotranspiration indicates increased thermal atmospheric thirst or expanded irrigated agricultural acreage.`;
+        ? `A decreasing evapotranspiration trend (~${magnitude} ${unit}/decade) was detected in ${regionName}. This is consistent with reduced surface water availability or vegetation changes, but causation cannot be inferred from the trend alone.`
+        : `An increasing evapotranspiration trend (~+${magnitude} ${unit}/decade) was detected in ${regionName}. This may be consistent with increased evaporative demand or land-surface changes; the trend alone does not establish the cause.`;
 
     case 'aod':
       return direction === 'Increasing'
-        ? `Surge in aerosol optical depth tracks intensified anthropogenic particulate emissions, biomass burning plumes, or dust storm frequency, directly impacting public respiratory health and surface solar insolation.`
-        : `Declining aerosol optical depth reflects effective regional emissions reductions and cleaner atmospheric columns.`;
+        ? `An increasing aerosol optical depth trend (~+${magnitude} ${unit}/decade) was detected in ${regionName}. This may reflect changes in emissions, dust, or biomass burning, but a monotonic trend does not identify the source; source apportionment requires additional analysis.`
+        : `A decreasing aerosol optical depth trend (~${magnitude} ${unit}/decade) was detected in ${regionName}, consistent with lower column aerosol loading. This may reflect emissions changes or meteorological flushing; the trend alone does not distinguish among these.`;
 
     case 'ozone':
       return direction === 'Decreasing'
-        ? `Stratospheric ozone depletion reduces UV shielding, while tropospheric ozone declines indicate shifts in precursor nitrogen oxides and volatile organic compounds.`
-        : `Elevated tropospheric ozone acts as a potent ground-level pollutant and secondary greenhouse gas.`;
+        ? `A decreasing ozone trend (~${magnitude} ${unit}/decade) was detected in ${regionName}. This could relate to stratospheric or tropospheric chemistry changes; attributing it to a specific mechanism requires additional analysis.`
+        : `An increasing ozone trend (~+${magnitude} ${unit}/decade) was detected in ${regionName}. This may reflect changes in precursor emissions or transport; the trend alone does not establish the cause.`;
 
     case 'pressure':
       return direction === 'Decreasing'
-        ? `Barometric pressure decline (-${Math.abs(ratePerDecade).toFixed(2)} ${unit}/decade) indicates intensified cyclogenesis, deepened regional thermal depressions, or poleward displacement of storm tracks.`
-        : `Rising barometric pressure (+${Math.abs(ratePerDecade).toFixed(2)} ${unit}/decade) reveals strengthening anticyclonic ridges, prolonged fair-weather stagnation, and subsidence drying.`;
+        ? `A decreasing pressure trend (~${magnitude} ${unit}/decade) was detected in ${regionName}, consistent with large-scale circulation shifts. Possible contributors include changes in storm tracks or thermal structure; the trend alone does not identify the mechanism.`
+        : `An increasing pressure trend (~+${magnitude} ${unit}/decade) was detected in ${regionName}, consistent with circulation changes. Attribution to specific dynamics requires additional analysis beyond the monotonic trend.`;
 
     case 'humidity':
       return direction === 'Decreasing'
-        ? `Desiccation of relative humidity (-${Math.abs(ratePerDecade).toFixed(1)} ${unit}/decade) reflects atmospheric vapor pressure deficit expansion, escalating evaporative demand and wildfire fuel dryness.`
-        : `Increasing relative humidity (+${Math.abs(ratePerDecade).toFixed(1)} ${unit}/decade) amplifies heat index stress and enhances condensation potential in maritime boundary layers.`;
+        ? `A decreasing relative-humidity trend (~${magnitude} ${unit}/decade) was detected in ${regionName}. This is consistent with increased vapor-pressure deficit, but the trend alone does not establish causation.`
+        : `An increasing relative-humidity trend (~+${magnitude} ${unit}/decade) was detected in ${regionName}. This may reflect changes in moisture supply or temperature; the trend alone does not identify the mechanism.`;
 
     case 'specific_humidity':
       return direction === 'Increasing'
-        ? `Absolute moisture surge (+${Math.abs(ratePerDecade).toFixed(2)} ${unit}/decade) follows thermodynamic Clausius-Clapeyron scaling (~7% per 1°C warming), enhancing total precipitable water available for extreme storm events.`
-        : `Atmospheric specific humidity deficit indicates continental interior drying or shifts in maritime air mass advection.`;
+        ? `An increasing specific-humidity trend (~+${magnitude} ${unit}/decade) was detected in ${regionName}. This is consistent with thermodynamic moisture scaling under warming (Clausius-Clapeyron ~7% per °C), but a trend alone does not prove that warming is the cause.`
+        : `A decreasing specific-humidity trend (~${magnitude} ${unit}/decade) was detected in ${regionName}. This could reflect changes in moisture transport or source regions; the trend alone does not establish the cause.`;
 
     case 'wind_speed':
       return direction === 'Increasing'
-        ? `Wind speed acceleration (+${Math.abs(ratePerDecade).toFixed(2)} ${unit}/decade) strengthens oceanic wave mixing, dust suspension, and wind energy yields, but elevates windthrow and storm damage risk.`
-        : `Surface atmospheric stilling (-${Math.abs(ratePerDecade).toFixed(2)} ${unit}/decade) weakens particulate dispersion, worsening urban smog trapping and reducing surface boundary layer ventilation.`;
+        ? `An increasing wind-speed trend (~+${magnitude} ${unit}/decade) was detected in ${regionName}. This may be consistent with circulation changes; attribution to specific drivers requires additional analysis.`
+        : `A decreasing wind-speed trend (~${magnitude} ${unit}/decade) was detected in ${regionName} (sometimes termed "stilling"). Possible contributors include circulation changes or surface roughness; the trend alone does not distinguish among them.`;
 
     case 'radiation_sw':
       return direction === 'Increasing'
-        ? `Solar brightening (+${Math.abs(ratePerDecade).toFixed(1)} ${unit}/decade) reflects reduced optical cloud thickness or declining aerosol particulate pollution, increasing daytime ground insolation.`
-        : `Solar dimming (-${Math.abs(ratePerDecade).toFixed(1)} ${unit}/decade) indicates elevated cloud cover reflectivity or particulate scattering from industrial emissions or biomass smoke.`;
+        ? `An increasing surface shortwave radiation trend (~+${magnitude} ${unit}/decade) was detected in ${regionName}, consistent with reduced cloud or aerosol attenuation. Possible explanations include cloud-cover or aerosol changes; the trend alone does not identify the cause.`
+        : `A decreasing surface shortwave radiation trend (~${magnitude} ${unit}/decade) was detected in ${regionName}, consistent with increased attenuation. Possible explanations include cloud or aerosol changes; attribution requires additional analysis.`;
 
     case 'radiation_lw':
       return direction === 'Increasing'
-        ? `Amplified downward longwave irradiance (+${Math.abs(ratePerDecade).toFixed(1)} ${unit}/decade) provides direct empirical evidence of enhanced greenhouse radiative forcing by rising carbon dioxide, methane, and water vapor.`
-        : `Diminished downward thermal radiation suggests clearing low-cloud decks or decreasing boundary layer moisture.`;
+        ? `An increasing downward longwave radiation trend (~+${magnitude} ${unit}/decade) was detected in ${regionName}. This is consistent with — but not proof of — changes in greenhouse-gas concentration, cloud, or water-vapor feedbacks. Attribution requires additional analysis.`
+        : `A decreasing downward longwave radiation trend (~${magnitude} ${unit}/decade) was detected in ${regionName}. This may reflect changes in cloud or moisture; the trend alone does not establish the cause.`;
 
     case 'albedo':
       return direction === 'Decreasing'
-        ? `Surface albedo darkening (-${Math.abs(ratePerDecade).toFixed(3)}/decade) is a critical positive feedback: retreating snow and silver-500 expose darker land/water, absorbing vastly more solar heat.`
-        : `Albedo increase indicates surface snow cover expansion, glacier advance, or desertification with exposed high-reflectance mineral soils.`;
+        ? `A decreasing albedo trend (~${magnitude}/decade) was detected in ${regionName}, consistent with surface darkening. Possible contributors include snow/ice retreat or land-cover change; the trend alone does not identify the mechanism.`
+        : `An increasing albedo trend (~+${magnitude}/decade) was detected in ${regionName}, consistent with brighter surface conditions. Possible contributors include snow/ice expansion or land-cover change; attribution requires additional analysis.`;
 
     case 'snow_depth':
       return direction === 'Decreasing'
-        ? `Snowpack shrinkage (-${Math.abs(ratePerDecade).toFixed(1)} ${unit}/decade) threatens downstream meltwater reservoirs, accelerates spring runoff timing, and curtails winter tourism.`
-        : `Accumulating snowpack (+${Math.abs(ratePerDecade).toFixed(1)} ${unit}/decade) reflects winter precipitation intensification in sub-freezing polar and alpine elevations.`;
+        ? `A decreasing snow-depth trend (~${magnitude} ${unit}/decade) was detected in ${regionName}, consistent with reduced snowpack. Possible contributors include warming or precipitation changes; the trend alone does not distinguish among them.`
+        : `An increasing snow-depth trend (~+${magnitude} ${unit}/decade) was detected in ${regionName}, consistent with increased snowpack. Possible contributors include precipitation or temperature changes; attribution requires additional analysis.`;
 
     case 'snow_precip':
       return direction === 'Decreasing'
-        ? `Shift from snowfall to rainfall (-${Math.abs(ratePerDecade).toFixed(1)} ${unit}/decade) indicates winter isotherms climbing above freezing, reducing seasonal mountain snowpack storage.`
-        : `Heightened snowfall indicates ocean warming providing extra moisture to sub-zero continental storms.`;
+        ? `A decreasing snowfall trend (~${magnitude} ${unit}/decade) was detected in ${regionName}. This may be consistent with a shift from snow to rain as temperatures rise, but the trend alone does not establish that mechanism.`
+        : `An increasing snowfall trend (~+${magnitude} ${unit}/decade) was detected in ${regionName}. Possible contributors include temperature or circulation changes; the trend alone does not establish the cause.`;
 
     case 'ozone_total':
       return direction === 'Increasing'
-        ? `Total column ozone recovery (+${Math.abs(ratePerDecade).toFixed(1)} ${unit}/decade) confirms the success of Montreal Protocol chlorofluorocarbon bans, restoring the vital UV-B shielding shield.`
-        : `Total ozone column reduction indicates persistent polar vortex cold pooling or springtime catalytic halogen destruction.`;
+        ? `An increasing total-column ozone trend (~+${magnitude} ${unit}/decade) was detected in ${regionName}. This is consistent with — but not proof of — ozone recovery, which may relate to declining halogen loading under the Montreal Protocol. Attribution requires additional analysis.`
+        : `A decreasing total-column ozone trend (~${magnitude} ${unit}/decade) was detected in ${regionName}. Possible contributors include chemical or dynamical changes; the trend alone does not establish the cause.`;
 
     case 'soil_moist_top':
     case 'soil_moist_prof':
       return direction === 'Decreasing'
-        ? `Soil wetness depletion (-${Math.abs(ratePerDecade).toFixed(3)}/decade) directly constrains agricultural productivity, triggers vegetative wilt, and exacerbates sensible heat flux partitioning.`
-        : `Elevated soil wetness enhances root-zone water supplies but may create anaerobic root conditions or elevate groundwater tables.`;
+        ? `A decreasing soil-wetness trend (~${magnitude}/decade) was detected in ${regionName}, consistent with drying. Possible contributors include precipitation or evapotranspiration changes; the trend alone does not establish the cause.`
+        : `An increasing soil-wetness trend (~+${magnitude}/decade) was detected in ${regionName}, consistent with wetting. Possible contributors include precipitation or evapotranspiration changes; attribution requires additional analysis.`;
 
     case 'sea_level':
       return direction === 'Increasing'
-        ? `Accelerating sea level rise (+${Math.abs(ratePerDecade).toFixed(3)} ${unit}/decade) compounds coastal inundation, saltwater intrusion into aquifers, and coastal erosion from combined thermal expansion and land silver-500 discharge.`
-        : `Relative local sea level fall indicates post-glacial isostatic rebound outpacing eustatic ocean volume rise.`;
+        ? `An increasing sea-level trend (~+${magnitude} ${unit}/decade) was detected in ${regionName}. This is consistent with — but not proof of — contributions from thermal expansion and land-ice melt. Attribution to specific sources requires additional analysis.`
+        : `A decreasing relative sea-level trend (~${magnitude} ${unit}/decade) was detected in ${regionName}. This could reflect local land motion (e.g., isostatic rebound) outpacing ocean-volume rise; the trend alone does not establish the cause.`;
 
     case 'sst':
       return direction === 'Increasing'
-        ? `Marine thermal accumulation (+${Math.abs(ratePerDecade).toFixed(2)} ${unit}/decade) triggers coral bleaching events, shifts fish species distributions, and fuels tropical cyclone intensification.`
-        : `Marine cooling reflects localized upwelling enhancement or freshwater melt lens stratification.`;
+        ? `An increasing SST trend (~+${magnitude} ${unit}/decade) was detected in ${regionName}, consistent with ocean warming. This may be associated with thermal stress on marine ecosystems, but the trend alone does not establish causation or attribute the warming to a specific driver.`
+        : `A decreasing SST trend (~${magnitude} ${unit}/decade) was detected in ${regionName}. Possible contributors include upwelling changes or freshwater stratification; the trend alone does not establish the cause.`;
 
     case 'streamflow':
       return direction === 'Decreasing'
-        ? `River discharge contraction (-${Math.abs(ratePerDecade).toFixed(1)} ${unit}/decade) imperils municipal water supplies, hydroelectric generation capacity, and freshwater riverine ecosystems.`
-        : `Heightened river discharge (+${Math.abs(ratePerDecade).toFixed(1)} ${unit}/decade) amplifies peak flood stage hazards and sediment export to deltaic basins.`;
+        ? `A decreasing streamflow trend (~${magnitude} ${unit}/decade) was detected in ${regionName}, consistent with reduced discharge. Possible contributors include precipitation, temperature, or water-management changes; the trend alone does not distinguish among them.`
+        : `An increasing streamflow trend (~+${magnitude} ${unit}/decade) was detected in ${regionName}, consistent with increased discharge. Possible contributors include precipitation or land-use changes; attribution requires additional analysis.`;
 
     case 'evi':
       return direction === 'Decreasing'
-        ? `Enhanced Vegetation Index decline (-${Math.abs(ratePerDecade).toFixed(3)}/decade) indicates canopy degradation and canopy defoliation independent of soil background interference.`
-        : `Enhanced Vegetation Index increase (+${Math.abs(ratePerDecade).toFixed(3)}/decade) demonstrates robust structural biomass gain and canopy leaf area index growth.`;
+        ? `A declining EVI trend (~${magnitude}/decade) was detected in ${regionName}, consistent with reduced canopy greenness. Possible explanations include vegetation stress, land-cover change, or disturbance; the trend alone does not distinguish among them.`
+        : `An increasing EVI trend (~+${magnitude}/decade) was detected in ${regionName}, consistent with increased canopy greenness. Possible contributors include land management, climate, or recovery; attribution requires additional analysis.`;
 
     default:
-      return `Observed rate of change represents a measurable directional forcing on local ecological and climatic balances.`;
+      return `A ${dirWord} trend was detected in ${regionName} (~${direction === 'Increasing' ? '+' : '-'}${magnitude} ${unit}/decade). The physical driver(s) cannot be determined from the trend test alone; attribution requires additional analysis.`;
   }
 }

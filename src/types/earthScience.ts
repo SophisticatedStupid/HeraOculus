@@ -327,10 +327,37 @@ export interface ChangePointResult {
 }
 
 export interface DiagnosticResults {
-  normalityTest: { method: string; statistic: number; pValue: number; isNormal: boolean };
+  normalityTest: {
+    method: string;
+    statistic: number;
+    pValue: number;
+    isNormal: boolean;
+    /**
+     * Interpretation of the normality test outcome.
+     * - 'no_evidence_against': p > alpha; failed to reject normality hypothesis.
+     *   This is NOT proof that the data are normal; it only indicates insufficient
+     *   evidence to reject the assumption.
+     * - 'evidence_against': p <= alpha; rejected normality.
+     * - 'insufficient_data': test could not be evaluated.
+     */
+    verdict: 'no_evidence_against' | 'evidence_against' | 'insufficient_data';
+  };
   outliers: { index: number; value: number; method: string; zScore?: number }[];
   missingnessProfile: { total: number; missing: number; percent: number; pattern: string };
-  autocorrelation: { lag1: number; durbinWatson: number; ljungBoxQ: number; ljungBoxP: number };
+  /**
+   * Autocorrelation diagnostics.
+   * All fields are null when the underlying observation ordering is unavailable
+   * (e.g. residuals constructed group-by-group in arbitrary order). A null value
+   * indicates the diagnostic is not computable, NOT that the value is zero.
+   */
+  autocorrelation: {
+    lag1: number | null;
+    durbinWatson: number | null;
+    ljungBoxQ: number | null;
+    ljungBoxP: number | null;
+    observationOrderAvailable?: boolean;
+    warning?: string;
+  };
   heteroskedasticity?: { bpStatistic: number; bpPValue: number; isHomoskedastic: boolean };
   vif?: { variable: string; vif: number }[];
 }

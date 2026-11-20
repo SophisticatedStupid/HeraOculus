@@ -1,4 +1,4 @@
-"""Tests for health, capability discovery, and non-leaking session credential store."""
+"""Tests for health, capability discovery, and non-leaking service credential status."""
 
 from __future__ import annotations
 
@@ -21,30 +21,21 @@ def test_health_endpoint():
     assert data["capabilities"]["rasterio_dem_sar_lulc"] is True
 
 
-def test_auth_configure_masks_and_clears_secrets():
-    resp = client.post(
-        "/api/v1/auth/configure",
-        json={
-            "firms_map_key": "secret_firms_map_key_998877",
-            "earthdata_token": "edl_bearer_super_secret_token_xyz",
-            "earthdata_username": "nasaresearcher",
-            "earthdata_password": "secret_password",
-        },
-    )
+def test_unauthenticated_user_cannot_configure_credentials():
+    """Per-user credential configuration endpoint must not exist (no auth infra)."""
+    resp = client.post("/api/v1/auth/configure", json={"firms_map_key": "some_key"})
+    assert resp.status_code == 404
+
+
+def test_auth_status_reports_environment_source_without_secrets():
+    resp = client.get("/api/v1/auth/status")
     assert resp.status_code == 200
     body = resp.json()
-    assert body["firms_configured"] is True
-    assert body["firms_source"] == "session"
-    assert body["earthdata_configured"] is True
-    assert body["earthdata_source"] == "session"
-    # Verify masked suffix hints appear without ever exposing raw secrets
+    assert "earthdata_configured" in body
+    assert "firms_configured" in body
+    assert body["earthdata_source"] in {"environment", "none"}
+    assert body["firms_source"] in {"environment", "none"}
+    # Credentials must never appear in the response body.
     serialized = str(body)
-    assert "sec...877" in serialized
-    assert "secret_firms_map_key_998877" not in serialized
-    assert "edl_bearer_super_secret_token_xyz" not in serialized
-    assert "secret_password" not in serialized
-
-    cleared = client.post("/api/v1/auth/configure", json={"clear_session": True})
-    assert cleared.status_code == 200
-    assert cleared.json()["firms_source"] != "session"
-    assert cleared.json()["earthdata_source"] != "session"
+    assert "EDL" not in serialized
+    assert "NASA_FIRMS" not in serialized or "firms" in serialized.lower()

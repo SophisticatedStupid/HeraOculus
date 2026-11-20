@@ -388,7 +388,7 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
                   ? 'bg-gold-400/20 text-gold-400 border border-gold-400/40'
                   : 'bg-ink-800 text-silver-500'
               }`}>
-                {anova.pValue < config.alpha ? 'Significant Group Variance' : 'No Significant Difference'}
+                {anova.pValue < config.alpha ? 'Statistically significant variance' : 'No significant variance detected'}
               </span>
             </div>
 
@@ -708,7 +708,7 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
                   ? 'bg-gold-400/20 text-silver-300 border border-gold-400/40'
                   : 'bg-ink-800 text-silver-500'
               }`}>
-                {trend.pValue < config.alpha ? 'Monotonic Trend Verified' : 'No Monotonic Trend'}
+                {trend.pValue < config.alpha ? 'Monotonic trend detected' : 'No monotonic trend detected'}
               </span>
             </div>
 
@@ -726,7 +726,7 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
                 <span className="text-base font-bold text-silver-500">{trend.pValue.toFixed(4)}</span>
               </div>
               <div className="p-3 bg-ink-900 rounded-xl">
-                <span className="text-[10px] text-silver-300 block">Theil-Sen Slope / step</span>
+                <span className="text-[10px] text-silver-300 block">Theil-Sen Slope</span>
                 <span className="text-base font-bold text-gold-300">{trend.slope.toFixed(4)}</span>
               </div>
             </div>

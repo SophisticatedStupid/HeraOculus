@@ -346,7 +346,7 @@ export const App: React.FC = () => {
                 </div>
 
                 <h1 className="text-2xl sm:text-4xl font-bold text-silver-100 tracking-tight leading-tight">
-                  Detect, visualize & prove significance in Earth's changing climate
+                  Detect, visualize & test significance in Earth's changing climate
                 </h1>
 
                 <p className="text-xs sm:text-sm text-silver-300 leading-relaxed">

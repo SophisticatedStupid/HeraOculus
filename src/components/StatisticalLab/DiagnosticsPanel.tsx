@@ -54,14 +54,20 @@ export const DiagnosticsPanel: React.FC<DiagnosticsPanelProps> = ({
             <span className="text-[11px] font-semibold text-silver-500">
               Normality
             </span>
-            {normalityTest.isNormal ? (
-              <CheckCircle className="w-4 h-4 text-silver-500" />
-            ) : (
+            {normalityTest.verdict === 'evidence_against' ? (
               <AlertCircle className="w-4 h-4 text-gold-300" />
+            ) : normalityTest.verdict === 'insufficient_data' ? (
+              <ShieldAlert className="w-4 h-4 text-silver-500" />
+            ) : (
+              <CheckCircle className="w-4 h-4 text-silver-500" />
             )}
           </div>
           <div className="text-sm font-bold text-silver-100">
-            {normalityTest.isNormal ? 'Gaussian Normal' : 'Non-Normal'}
+            {normalityTest.verdict === 'evidence_against'
+              ? 'Evidence against normality'
+              : normalityTest.verdict === 'insufficient_data'
+              ? 'Insufficient data'
+              : 'No evidence against normality'}
           </div>
           <div className="text-[10px] text-silver-500">
             p = {normalityTest.pValue.toFixed(4)} ({normalityTest.method})
@@ -97,10 +103,10 @@ export const DiagnosticsPanel: React.FC<DiagnosticsPanelProps> = ({
             <BarChart className="w-4 h-4 text-gold-400" />
           </div>
           <div className="text-sm font-bold text-silver-100">
-            DW: {autocorrelation.durbinWatson.toFixed(2)} | r₁: {autocorrelation.lag1.toFixed(2)}
+            {autocorrelation.durbinWatson !== null ? `DW: ${autocorrelation.durbinWatson.toFixed(2)} ` : 'DW: unavailable'} | {autocorrelation.lag1 !== null ? `r₁: ${autocorrelation.lag1.toFixed(2)}` : 'r₁: unavailable'}
           </div>
           <div className="text-[10px] text-silver-500">
-            Ljung-Box Q = {autocorrelation.ljungBoxQ.toFixed(2)} (p = {autocorrelation.ljungBoxP.toFixed(4)})
+            {autocorrelation.ljungBoxQ !== null ? `Ljung-Box Q = ${autocorrelation.ljungBoxQ.toFixed(2)} (p = ${autocorrelation.ljungBoxP?.toFixed(4) || '—'})` : 'Ljung-Box unavailable (observation ordering not preserved)'}
           </div>
         </div>
 

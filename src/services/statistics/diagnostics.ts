@@ -1,4 +1,5 @@
 import { DiagnosticResults } from '../../types/earthScience';
+import { classifyAssumptionTest } from './anova';
 import { chiSquaredCDF, normalCdf } from './distributions';
 import { Matrix, inverse } from 'ml-matrix';
 
@@ -20,12 +21,15 @@ export function runDiagnostics(
   const lb = ljungBoxTest(res);
   const lag1 = computeLag1(res);
 
+  const normVerdict = classifyAssumptionTest(norm.pValue);
+
   const diag: DiagnosticResults = {
     normalityTest: {
       method: norm.method,
       statistic: norm.statistic,
       pValue: norm.pValue,
       isNormal: norm.pValue > 0.05,
+      verdict: normVerdict,
     },
     outliers,
     missingnessProfile: missing,

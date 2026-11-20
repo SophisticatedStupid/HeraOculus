@@ -80,15 +80,18 @@ export const PlainEnglishSummary: React.FC<PlainEnglishSummaryProps> = ({
           <p className="text-xs text-silver-300 leading-relaxed">
             {isSignificant ? (
               <>
-                Because <strong className="text-silver-100">p &lt; 0.05</strong>, scientists can
-                conclusively state that this change is not random chance or an artifact of weather
-                cycles. It represents sustained directional forcing on the Earth system.
+                Because <strong className="text-silver-100">p &lt; 0.05</strong>, the data
+                provide statistical evidence of a directional trend (i.e. the observed pattern
+                is unlikely under a null hypothesis of no trend). This does not establish the
+                physical cause of the trend; attribution requires additional analysis.
               </>
             ) : (
               <>
-                Because <strong className="text-silver-100">p ≥ 0.05</strong>, the trend cannot yet be
-                separated with high statistical confidence from natural climate variability (like
-                ENSO or volcanic spikes). A longer time-series baseline is required.
+                Because <strong className="text-silver-100">p ≥ 0.05</strong>, the data do
+                not provide sufficient evidence to conclude a directional trend is present
+                beyond natural variability (such as ENSO or volcanic effects). This does not
+                prove the absence of change; it reflects insufficient statistical power given
+                the current observation record.
               </>
             )}
           </p>
