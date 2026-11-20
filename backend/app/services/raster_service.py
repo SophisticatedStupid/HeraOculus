@@ -21,7 +21,14 @@ from skimage.filters import threshold_otsu
 from sklearn.metrics import cohen_kappa_score, confusion_matrix
 
 
-def _read_raster_bytes(raw_bytes: bytes, filename: str) -> tuple[np.ndarray, dict]:
+def _read_raster_bytes(raw_bytes: bytes, filename: str) -> tuple[np.ndarray, np.ndarray, dict]:
+    """Read a raster from bytes, returning (array, validity_mask, metadata).
+
+    The array is float64 with NaN where nodata / missing values occur.  The
+    validity mask is ``True`` where the pixel is finite (valid).  This separates
+    raster values from their validity so downstream resampling cannot
+    contaminate valid pixels with invalid source cells.
+    """
     suffix = Path(filename).suffix.lower() or ".tif"
     fd, tmp_path = tempfile.mkstemp(suffix=suffix)
     try:
@@ -32,14 +39,16 @@ def _read_raster_bytes(raw_bytes: bytes, filename: str) -> tuple[np.ndarray, dic
             nodata = src.nodata
             if nodata is not None:
                 arr = np.where(arr == nodata, np.nan, arr)
+            valid = np.isfinite(arr)
             meta = {
                 "crs": src.crs,
                 "transform": src.transform,
                 "width": src.width,
                 "height": src.height,
                 "res": src.res,
+                "nodata": nodata,
             }
-            return arr, meta
+            return arr, valid, meta
     finally:
         try:
             os.remove(tmp_path)
@@ -99,9 +108,15 @@ def _pixel_grid_resize(
     src_arr: np.ndarray,
     *,
     is_categorical: bool,
-) -> np.ndarray:
+    src_valid: Optional[np.ndarray] = None,
+) -> tuple[np.ndarray, np.ndarray]:
     """Resize source array to reference shape using PIL (pixel-grid-only mode).
-    
+
+    Returns ``(resized_array, resized_valid_mask)``.  Invalid source cells are
+    excluded from interpolation (continuous) or resampling (categorical) and do
+    not contaminate valid output cells.  The output validity mask is reconstructed
+    from the source validity mask after resizing.
+
     WARNING: This ignores georeferencing. Only use when both rasters lack CRS
     and you explicitly accept pixel-grid comparison.
     """
@@ -112,10 +127,50 @@ def _pixel_grid_resize(
         stacklevel=2,
     )
     from PIL import Image
-    mode = Image.Resampling.NEAREST if is_categorical else Image.Resampling.BILINEAR
-    img = Image.fromarray(np.nan_to_num(src_arr, nan=0.0).astype(np.float32))
-    resized = img.resize((ref_arr.shape[1], ref_arr.shape[0]), mode)
-    return np.asarray(resized, dtype=float)
+
+    if src_valid is None:
+        src_valid = np.isfinite(src_arr)
+
+    # Build two-channel image: [values, valid_mask]
+    # For categorical: use nearest-neighbor; invalid cells get a sentinel value
+    # For continuous: use bilinear with zero-filled invalid cells, then mask output
+    H_ref, W_ref = ref_arr.shape
+    H_src, W_src = src_arr.shape
+
+    if is_categorical:
+        # Categorical: nearest-neighbor. Invalid cells are kept as NaN (sentinel)
+        # so they don't introduce a fake class 0.
+        filled = np.where(src_valid, src_arr, np.nan)
+        img = Image.fromarray(filled.astype(np.float32), mode="F")
+        resized = img.resize((W_ref, H_ref), Image.Resampling.NEAREST)
+        resized_arr = np.asarray(resized, dtype=float)
+        resized_valid = np.isfinite(resized_arr)
+        return resized_arr, resized_valid
+    else:
+        # Continuous: bilinear. Zero-fill invalid cells for interpolation, then
+        # mask the output so invalid source cells don't contaminate valid results.
+        filled = np.where(src_valid, src_arr, 0.0)
+        img = Image.fromarray(filled.astype(np.float32), mode="F")
+        resized = img.resize((W_ref, H_ref), Image.Resampling.BILINEAR)
+        resized_arr = np.asarray(resized, dtype=float)
+
+        # Build validity mask: dilate source validity to match interpolation kernel
+        # For bilinear, a valid output pixel can be influenced by up to 4 source pixels.
+        # We use a conservative approach: output is valid if ALL contributing source
+        # pixels are valid (no interpolation across invalid boundaries).
+        from scipy.ndimage import binary_erosion
+        src_valid_padded = np.pad(src_valid, 1, mode='constant', constant_values=False)
+        # For each output pixel, check if its source window is fully valid
+        # Simple approach: use binary_erosion with a 2x2 kernel on source validity,
+        # then resize that mask with nearest (conservative).
+        eroded = binary_erosion(src_valid, structure=np.ones((2, 2)))
+        eroded_img = Image.fromarray(eroded.astype(np.float32), mode="F")
+        resized_eroded = eroded_img.resize((W_ref, H_ref), Image.Resampling.NEAREST)
+        resized_valid = np.asarray(resized_eroded, dtype=bool)
+
+        # Mark invalid cells as NaN in the output array
+        resized_arr[~resized_valid] = np.nan
+        return resized_arr, resized_valid
 
 
 def _align_second_raster(
@@ -126,8 +181,14 @@ def _align_second_raster(
     *,
     is_categorical: bool = False,
     pixel_grid_only: bool = False,
-) -> np.ndarray:
+    src_valid: Optional[np.ndarray] = None,
+) -> tuple[np.ndarray, np.ndarray]:
     """Reproject or resample second raster to match first raster's exact grid.
+
+    Returns ``(aligned_array, aligned_valid_mask)`` where ``aligned_valid_mask``
+    is ``True`` where the aligned pixel is finite (valid).  Nodata metadata from
+    both rasters is preserved as NaN/False so invalid pixels never become
+    legitimate measurements.
 
     Args:
         ref_arr: Reference raster array
@@ -136,29 +197,37 @@ def _align_second_raster(
         src_meta: Source raster metadata
         is_categorical: Use nearest-neighbor for categorical (LULC), bilinear for continuous
         pixel_grid_only: If True, allow pixel-grid resize when CRS missing. Default False.
+        src_valid: Validity mask of source array (True where valid). If None,
+            derived from np.isfinite(src_arr).
 
     Returns:
-        Aligned array matching ref_arr shape and grid.
+        (aligned_array, aligned_valid_mask) matching ref_arr shape and grid.
 
     Raises:
         ValueError: If CRS mismatch and pixel_grid_only=False, or if one has CRS and other doesn't.
     """
+    if src_valid is None:
+        src_valid = np.isfinite(src_arr)
+
     ref_crs = ref_meta.get("crs")
     src_crs = src_meta.get("crs")
     grids_match = _validate_alignment(ref_arr, ref_meta, src_arr, src_meta)
 
     # Fast path: identical grid AND equivalent CRS -> copy unchanged.
     if grids_match and ref_crs is not None and src_crs is not None and _crs_equivalent(ref_crs, src_crs):
-        return src_arr.copy()
+        return src_arr.copy(), src_valid.copy()
 
     # Both have CRS: reproject onto reference grid (covers same-CRS-different-grid
     # and different-CRS cases).
     if ref_crs is not None and src_crs is not None:
-        return _reproject_to_grid(
+        aligned_arr = _reproject_to_grid(
             src_arr, src_meta,
             ref_arr.shape, ref_meta["transform"], ref_crs,
             is_categorical=is_categorical,
         )
+        # Reproject already preserves NaN nodata; rebuild validity mask from array.
+        aligned_valid = np.isfinite(aligned_arr)
+        return aligned_arr, aligned_valid
 
     # One has CRS, the other does not: reject (never mix georeferenced with raw).
     if (ref_crs is None) != (src_crs is None):
@@ -171,8 +240,8 @@ def _align_second_raster(
     # Neither has CRS: do not silently assume geographic compatibility.
     if pixel_grid_only:
         if not grids_match:
-            return _pixel_grid_resize(ref_arr, src_arr, is_categorical=is_categorical)
-        return src_arr.copy()
+            return _pixel_grid_resize(ref_arr, src_arr, is_categorical=is_categorical, src_valid=src_valid)
+        return src_arr.copy(), src_valid.copy()
 
     raise ValueError(
         "Both rasters lack CRS metadata. Georeferenced comparison requires CRS. "
@@ -313,7 +382,7 @@ def _render_scalar_png(arr: np.ndarray, palette: Literal["terrain", "diverging",
         return _encode_png(rgba)
 
     if palette == "diverging":
-        vmax = max(float(np.percentile(np.abs(arr[valid]), 98)), 1e-3)
+        vmax = max(float(np.percentile(np.abs(np.nan_to_num(arr[valid], nan=0.0, posinf=0.0, neginf=0.0)), 98)), 1e-3)
         norm = np.clip(np.nan_to_num(arr, nan=0.0) / vmax, -1.0, 1.0)
         rgba[:, :, 0] = np.where(norm >= 0, 35 + 220 * norm, 35 * (1 + norm)).astype(np.uint8)
         rgba[:, :, 1] = np.where(norm >= 0, 110 + 90 * (1 - norm), 130 + 95 * (-norm)).astype(np.uint8)
@@ -328,7 +397,7 @@ def _render_scalar_png(arr: np.ndarray, palette: Literal["terrain", "diverging",
     else:
         lo, hi = np.percentile(arr[valid], [2, 98])
         span = max(float(hi - lo), 1e-6)
-        u = np.clip((np.nan_to_num(arr, nan=lo) - lo) / span, 0.0, 1.0)
+        u = np.clip((np.nan_to_num(arr, nan=lo, posinf=hi, neginf=lo) - lo) / span, 0.0, 1.0)
         if palette == "sar":
             val = (20 + 235 * u).astype(np.uint8)
             rgba[:, :, 0] = val
@@ -408,8 +477,19 @@ def compute_dem_differencing(
         tier = "synthetic_demo"
         msg = f"Curated landform change benchmark ({label}); upload two GeoTIFF DEMs (.tif) to evaluate real terrain."
 
+    # ------------------------------------------------------------------
+    # Validate inputs: build joint validity mask and check for valid pixels
+    # ------------------------------------------------------------------
+    z1_valid = np.isfinite(z1)
+    z2_valid = np.isfinite(z2)
+    valid = z1_valid & z2_valid  # both DEMs must be finite for a valid difference
+    excluded = int(np.sum(~valid))
+    valid_pixels = int(np.sum(valid))
+
     dod = z2 - z1
-    valid = np.isfinite(dod)
+    # Re-apply joint validity: where either input is nodata/invalid, difference is invalid
+    dod[~valid] = np.nan
+    dod_valid = dod[valid]
 
     if pixel_areas_m2 is not None:
         areas_m2 = pixel_areas_m2
@@ -430,6 +510,52 @@ def compute_dem_differencing(
             "area_constant": True,
         }
 
+    # Handle case with no valid overlapping pixels
+    if valid_pixels == 0:
+        zeros_mask = np.zeros_like(dod)
+        return {
+            "provenance": {
+                "tier": tier,
+                "source_name": label,
+                "dataset_id": scenario.upper() if not is_upload else "USER_DEM_PAIR",
+                "is_live": False,
+                "status_message": msg,
+            },
+            "label": label,
+            "dimensions": {
+                "rows": int(z1.shape[0]),
+                "cols": int(z1.shape[1]),
+                "pixel_size_m": float(pixel_size_m),
+            },
+            "lod_threshold_m": lod_threshold_m,
+            "summary": {
+                "valid_pixels": 0,
+                "excluded_pixels": excluded if excluded > 0 else int(z1.size),
+                "min_change_m": 0.0,
+                "max_change_m": 0.0,
+                "mean_change_m": 0.0,
+                "std_change_m": 0.0,
+                "median_change_m": 0.0,
+                "max_deposition_m": 0.0,
+                "max_erosion_m": 0.0,
+                "mean_elevation_change_m": 0.0,
+                "pct_area_changed": 0.0,
+                "deposition_volume_m3": 0.0,
+                "erosion_volume_m3": 0.0,
+                "net_volume_change_m3": 0.0,
+            },
+            "histogram": {
+                "centers_m": [],
+                "counts": [],
+            },
+            "images": {
+                "before_png": _render_scalar_png(z1, "terrain"),
+                "after_png": _render_scalar_png(z2, "terrain"),
+                "dod_png": _render_scalar_png(dod, "diverging"),
+                "lod_mask_png": _render_scalar_png(zeros_mask, "mask"),
+            },
+        }
+
     sig = valid & (np.abs(dod) >= lod_threshold_m)
     deposition_mask = sig & (dod > 0)
     erosion_mask = sig & (dod < 0)
@@ -441,6 +567,9 @@ def compute_dem_differencing(
     sig_class = np.where(deposition_mask, 1.0, np.where(erosion_mask, -1.0, 0.0))
     dod_valid = dod[valid]
     hist_counts, hist_edges = np.histogram(dod_valid, bins=24)
+
+    # Standard deviation of valid differences
+    std_change = round(float(np.std(dod_valid)), 3) if valid_pixels > 1 else 0.0
 
     # Assemble provenance metadata
     provenance = {
@@ -463,11 +592,17 @@ def compute_dem_differencing(
         },
         "lod_threshold_m": lod_threshold_m,
         "summary": {
-            "mean_elevation_change_m": round(float(np.mean(dod_valid)), 3),
+            "valid_pixels": valid_pixels,
+            "excluded_pixels": excluded,
+            "min_change_m": round(float(np.min(dod_valid)), 3),
+            "max_change_m": round(float(np.max(dod_valid)), 3),
+            "mean_change_m": round(float(np.mean(dod_valid)), 3),
+            "std_change_m": std_change,
             "median_change_m": round(float(np.median(dod_valid)), 3),
             "max_deposition_m": round(float(np.max(dod_valid)), 3),
             "max_erosion_m": round(float(np.min(dod_valid)), 3),
-            "pct_area_changed": round(100.0 * float(np.sum(sig)) / max(1, int(np.sum(valid))), 2),
+            "mean_elevation_change_m": round(float(np.mean(dod_valid)), 3),
+            "pct_area_changed": round(100.0 * float(np.sum(sig)) / max(1, valid_pixels), 2),
             "deposition_volume_m3": round(dep_vol_m3, 1),
             "erosion_volume_m3": round(ero_vol_m3, 1),
             "net_volume_change_m3": round(net_vol_m3, 1),
@@ -494,9 +629,13 @@ def compute_dem_differencing_from_files(
     lod_threshold_m: float = 0.75,
     pixel_grid_only: bool = False,
 ) -> dict:
-    z1, m1 = _read_raster_bytes(before_bytes, before_name)
-    z2_raw, m2 = _read_raster_bytes(after_bytes, after_name)
-    z2 = _align_second_raster(z1, m1, z2_raw, m2, is_categorical=False, pixel_grid_only=pixel_grid_only)
+    z1, v1, m1 = _read_raster_bytes(before_bytes, before_name)
+    z2_raw, v2, m2 = _read_raster_bytes(after_bytes, after_name)
+    z2, v2_aligned = _align_second_raster(
+        z1, m1, z2_raw, m2, is_categorical=False,
+        pixel_grid_only=pixel_grid_only, src_valid=v2,
+    )
+    # The reference raster's validity mask is preserved as-is (no resampling needed).
     area_kind = _determine_area_kind(m1.get("crs"))
     areas_m2 = _compute_pixel_areas(z1, m1.get("transform"), m1.get("crs"), area_kind=area_kind)
     pixel_area_meta = _pixel_area_metadata(m1.get("crs"), areas_m2)
@@ -514,17 +653,130 @@ def compute_dem_differencing_from_files(
 # 2. SAR Speckle Filtering & Log-Ratio Change Detection + NASA ASF Proxy
 # ---------------------------------------------------------------------------
 
-def _lee_speckle_filter(img: np.ndarray, window_size: int = 5) -> np.ndarray:
-    """Classic Lee adaptive multiplicative speckle filter preserving edges."""
-    clean = np.nan_to_num(img, nan=float(np.nanmedian(img)))
-    mean_local = uniform_filter(clean, size=window_size)
-    sq_mean_local = uniform_filter(clean ** 2, size=window_size)
-    var_local = np.maximum(0.0, sq_mean_local - mean_local ** 2)
-    # Estimate overall speckle noise variance in CV^2 sense
-    cv_global = float(np.median(np.sqrt(var_local) / np.maximum(mean_local, 1e-6)))
+def _lee_speckle_filter(
+    img: np.ndarray, window_size: int = 5, valid: Optional[np.ndarray] = None
+) -> np.ndarray:
+    """Classic Lee adaptive multiplicative speckle filter preserving edges.
+
+    When a ``valid`` mask is provided, local mean and variance are computed only
+    from valid pixels in the window (via normalized convolution), and the filtered
+    result at invalid positions is set to NaN.  Invalid pixels do not contaminate
+    the local statistics of valid pixels.
+    """
+    eps = 1e-6
+
+    # Determine validity mask
+    if valid is None:
+        valid = np.isfinite(img)
+
+    # Normalised convolution: weight = validity mask (1 for valid, 0 for invalid)
+    w = valid.astype(float)
+    sum_w = uniform_filter(w, size=window_size)          # count of valid pixels in window
+    sum_val = uniform_filter(img * w, size=window_size)  # sum of valid values in window
+    sum_sq = uniform_filter((img**2) * w, size=window_size)  # sum of squared valid values
+
+    # Local mean (only where at least one valid pixel exists in window)
+    mean_local = np.where(sum_w > 0, sum_val / sum_w, 0.0)
+
+    # Local variance: E[X^2] - E[X]^2
+    var_local = np.maximum(0.0, sum_sq / np.maximum(sum_w, eps) - mean_local**2)
+
+    # Estimate global speckle noise CV from valid pixels only
+    cv_mask = valid & np.isfinite(mean_local) & (np.maximum(mean_local, eps) > 0) & (var_local > 0)
+    cv_count = int(np.sum(cv_mask))
+    if cv_count > 0:
+        cv_global = float(np.median(np.sqrt(var_local[cv_mask]) / np.maximum(mean_local[cv_mask], eps)))
+    else:
+        cv_global = 1.0  # default when no valid pixels have statistics
+
     var_noise = (mean_local * cv_global) ** 2
-    weight = np.clip(np.maximum(0.0, var_local - var_noise) / np.maximum(var_local, 1e-8), 0.0, 1.0)
-    return mean_local + weight * (clean - mean_local)
+
+    # Weight: clip to [0,1]; at invalid positions the weight is computed but will be overridden
+    weight = np.clip(np.maximum(0.0, var_local - var_noise) / np.maximum(var_local, eps), 0.0, 1.0)
+
+    # Filtered output
+    result = mean_local + weight * (img - mean_local)
+
+    # At invalid positions, set result to NaN (will be masked out downstream)
+    result = np.where(valid, result, np.nan)
+
+    return result
+
+
+def _mean_speckle_filter(
+    img: np.ndarray, window_size: int = 5, valid: Optional[np.ndarray] = None
+) -> np.ndarray:
+    """Boxcar mean filter with optional validity mask.
+
+    Local mean is computed only from valid pixels in the window.  Invalid
+    pixels are set to NaN in the output so they never contaminate valid results.
+    """
+    if valid is None:
+        valid = np.isfinite(img)
+
+    w = valid.astype(float)
+    sum_w = uniform_filter(w, size=window_size)
+    sum_val = uniform_filter(img * w, size=window_size)
+
+    result = np.where(sum_w > 0, sum_val / sum_w, np.nan)
+
+    # Ensure invalid positions are NaN
+    result = np.where(valid, result, np.nan)
+    return result
+
+
+def _sar_result_all_invalid(
+    *,
+    label: str,
+    tier: str,
+    msg: str,
+    scenario: str,
+    speckle_filter: str,
+    window_size: int,
+    threshold_db: float,
+    threshold_mode: str,
+    valid_pixels: int,
+    excluded_pixels: int,
+    total_pixels: int,
+    coverage_pct: float,
+) -> dict:
+    """Short-circuit result when every pixel is invalid (no valid data)."""
+    provenance = {
+        "tier": tier,
+        "source_name": label,
+        "dataset_id": scenario.upper(),
+        "is_live": False,
+        "status_message": msg,
+    }
+    return {
+        "provenance": provenance,
+        "label": label,
+        "speckle_filter": speckle_filter,
+        "window_size": window_size,
+        "threshold_mode": threshold_mode,
+        "user_threshold_db": threshold_db,
+        "otsu_suggested_threshold_db": 0.0,
+        "applied_threshold_db": threshold_db,
+        "summary": {
+            "total_area_km2": 0.0,
+            "backscatter_drop_area_km2": 0.0,
+            "backscatter_gain_area_km2": 0.0,
+            "pct_changed": 0.0,
+            "valid_pixels": valid_pixels,
+            "excluded_pixels": excluded_pixels,
+            "changed_pixels": 0,
+            "valid_data_coverage_pct": coverage_pct,
+            "mean_log_ratio_db": 0.0,
+            "std_log_ratio_db": 0.0,
+        },
+        "histogram": {"centers_db": [], "counts": []},
+        "images": {
+            "before_png": _render_scalar_png(np.full((1, 1), np.nan), "sar"),
+            "after_png": _render_scalar_png(np.full((1, 1), np.nan), "sar"),
+            "log_ratio_png": _render_scalar_png(np.full((1, 1), np.nan), "diverging"),
+            "change_mask_png": _render_scalar_png(np.full((1, 1), np.nan), "mask"),
+        },
+    }
 
 
 def _synthetic_sar_pair(scenario: str) -> tuple[np.ndarray, np.ndarray, str]:
@@ -580,44 +832,111 @@ def compute_sar_change_detection(
         "fixed"  — apply the user-supplied ``threshold_db``.
         "otsu"   — compute Otsu threshold from |log10 ratio| and apply it.
         Defaults to ``"fixed"`` for backward compatibility.
-    """
 
+    Nodata / NaN / Inf handling
+    ---------------------------
+    A joint validity mask is built from both input rasters at the start of
+    processing (pixels must be finite in **both** inputs to be valid).  The
+    mask is preserved throughout the pipeline:
+
+    * speckle filters compute local statistics **only** from valid pixels
+      (invalid pixels in the window are excluded, not filled with a constant)
+    * the log-ratio is computed only for valid pixels; invalid pixels are NaN
+    * the Otsu threshold is estimated from ``|log-ratio|`` of valid pixels only
+    * changed-pixel counts and area statistics use valid pixels as the denominator
+    * the change-mask PNG renders invalid pixels as transparent
+    """
     if threshold_mode not in ("fixed", "otsu"):
         raise ValueError(f"Invalid threshold_mode '{threshold_mode}'; expected 'fixed' or 'otsu'.")
 
-    if threshold_mode == "otsu":
-        if threshold_db <= 0:
-            raise ValueError("threshold_db must be positive when using otsu mode.")
+    if threshold_mode == "otsu" and threshold_db <= 0:
+        raise ValueError("threshold_db must be positive when using otsu mode.")
 
+    # ------------------------------------------------------------------
+    # Input: either user-uploaded arrays or synthetic benchmark pair
+    # ------------------------------------------------------------------
     if img_before is not None and img_after is not None:
-        i1, i2 = img_before, img_after
+        i1_raw, i2_raw = np.asarray(img_before, dtype=float), np.asarray(img_after, dtype=float)
+        if i1_raw.shape != i2_raw.shape:
+            raise ValueError(
+                f"SAR raster shape mismatch: before {i1_raw.shape} != after {i2_raw.shape}"
+            )
         label = "Uploaded Dual SAR GeoTIFF Backscatter Pair"
         tier = "user_upload"
-        msg = f"Processed uploaded {i1.shape[0]}x{i1.shape[1]} SAR intensity scenes with {speckle_filter} speckle filtering."
+        msg = f"Processed uploaded {i1_raw.shape[0]}x{i1_raw.shape[1]} SAR intensity scenes with {speckle_filter} speckle filtering."
     else:
-        i1, i2, label = _synthetic_sar_pair(scenario)
+        i1_raw, i2_raw, label = _synthetic_sar_pair(scenario)
         tier = "synthetic_demo"
         msg = f"Sentinel-1 / NISAR backscatter benchmark ({label}); upload two GeoTIFF SAR bands to analyze real scenes."
 
+    # ------------------------------------------------------------------
+    # Joint validity mask — finite in BOTH rasters
+    # ------------------------------------------------------------------
+    valid = np.isfinite(i1_raw) & np.isfinite(i2_raw)
+    total_pixels = int(valid.size)
+    valid_pixels = int(np.sum(valid))
+    excluded_pixels = total_pixels - valid_pixels
+    coverage_pct = round(100.0 * valid_pixels / max(1, total_pixels), 2)
+
+    # ------------------------------------------------------------------
+    # Guard: all pixels invalid → short-circuit with safe defaults
+    # ------------------------------------------------------------------
+    if valid_pixels == 0:
+        total_area_km2 = 0.0
+        return _sar_result_all_invalid(
+            label=label,
+            tier=tier,
+            msg=msg,
+            scenario=scenario,
+            speckle_filter=speckle_filter,
+            window_size=window_size,
+            threshold_db=threshold_db,
+            threshold_mode=threshold_mode,
+            valid_pixels=0,
+            excluded_pixels=excluded_pixels,
+            total_pixels=total_pixels,
+            coverage_pct=0.0,
+        )
+
+    # ------------------------------------------------------------------
+    # Prepare working arrays: replace invalid with 0, then clamp to eps.
+    # This preserves NaN propagation through subsequent steps.
+    # ------------------------------------------------------------------
     eps = 1e-6
-    i1_pos = np.maximum(np.nan_to_num(i1, nan=float(np.nanmedian(i1))), eps)
-    i2_pos = np.maximum(np.nan_to_num(i2, nan=float(np.nanmedian(i2))), eps)
+    i1_filled = np.where(valid, i1_raw, 0.0)
+    i2_filled = np.where(valid, i2_raw, 0.0)
 
+    # ------------------------------------------------------------------
+    # Speckle filtering — must not contaminate valid pixels
+    # ------------------------------------------------------------------
     if speckle_filter == "lee":
-        f1 = _lee_speckle_filter(i1_pos, window_size)
-        f2 = _lee_speckle_filter(i2_pos, window_size)
+        f1 = _lee_speckle_filter(i1_filled, window_size, valid=valid)
+        f2 = _lee_speckle_filter(i2_filled, window_size, valid=valid)
     elif speckle_filter == "mean":
-        f1 = uniform_filter(i1_pos, size=window_size)
-        f2 = uniform_filter(i2_pos, size=window_size)
+        f1 = _mean_speckle_filter(i1_filled, window_size, valid=valid)
+        f2 = _mean_speckle_filter(i2_filled, window_size, valid=valid)
     else:
-        f1, f2 = i1_pos, i2_pos
+        f1, f2 = i1_filled.copy(), i2_filled.copy()
 
-    log_ratio_db = 10.0 * np.log10(np.maximum(f2, eps) / np.maximum(f1, eps))
-    abs_change = np.abs(log_ratio_db)
+    # Clamp to eps — NaN from invalid positions propagates naturally
+    i1_pos = np.maximum(f1, eps)
+    i2_pos = np.maximum(f2, eps)
+    # Ensure invalid positions are NaN (not clamped to eps) for rendering / downstream use
+    i1_pos = np.where(valid, i1_pos, np.nan)
+    i2_pos = np.where(valid, i2_pos, np.nan)
 
-    # Compute Otsu threshold (guarded against degenerate histograms)
+    # ------------------------------------------------------------------
+    # Log-ratio — only valid pixels; invalid pixels → NaN
+    # ------------------------------------------------------------------
+    log_ratio_db = np.full(i1_raw.shape, np.nan, dtype=float)
+    log_ratio_db[valid] = 10.0 * np.log10(i2_pos[valid] / i1_pos[valid])
+    abs_change = np.abs(log_ratio_db)  # NaN at invalid positions
+
+    # ------------------------------------------------------------------
+    # Threshold estimation — valid pixels only
+    # ------------------------------------------------------------------
     try:
-        otsu_db = float(threshold_otsu(abs_change))
+        otsu_db = float(threshold_otsu(abs_change[valid]))
         # A meaningful Otsu cut must be finite and strictly positive; flat / degenerate
         # histograms (e.g. constant scenes) yield 0.0 which would flag every pixel, so
         # fall back to the user-supplied fixed threshold in that case.
@@ -626,32 +945,45 @@ def compute_sar_change_detection(
     except Exception:
         otsu_db = float(threshold_db)
 
-    # ------------------------------------------------------------------
     # Select the applied threshold based on the requested mode
+    applied_threshold = otsu_db if threshold_mode == "otsu" else threshold_db
+
     # ------------------------------------------------------------------
-    if threshold_mode == "otsu":
-        applied_threshold = otsu_db
-    else:
-        applied_threshold = threshold_db
+    # Build gain / loss masks — valid pixels only; invalid pixels are not changed
+    # ------------------------------------------------------------------
+    changed_drop = (log_ratio_db <= -applied_threshold) & valid
+    changed_gain = (log_ratio_db >= applied_threshold) & valid
+    unchanged_valid = valid & ~(changed_drop | changed_gain)
 
-    # Build gain / loss masks from the signed log-ratio; direction is still
-    # determined from the signed log_ratio_db, not from the absolute values.
-    changed_drop = log_ratio_db <= -applied_threshold
-    changed_gain = log_ratio_db >= applied_threshold
+    # Change mask for rendering: +1 gain, -1 drop, 0 unchanged, NaN for invalid
     mask_arr = np.where(changed_gain, 1.0, np.where(changed_drop, -1.0, 0.0))
+    mask_arr = np.where(~valid, np.nan, mask_arr)
 
+    # ------------------------------------------------------------------
+    # Area calculations — valid pixels only
+    # ------------------------------------------------------------------
     if pixel_areas_m2 is not None:
         areas_m2 = pixel_areas_m2
-        assert areas_m2.shape == i1.shape, f"pixel_areas_m2 shape {areas_m2.shape} != SAR shape {i1.shape}"
+        assert areas_m2.shape == i1_raw.shape, f"pixel_areas_m2 shape {areas_m2.shape} != SAR shape {i1_raw.shape}"
     else:
-        areas_m2 = np.full(i1.shape, pixel_size_m ** 2, dtype=float)
+        areas_m2 = np.full(i1_raw.shape, pixel_size_m ** 2, dtype=float)
 
-    total_area_km2 = float(np.sum(areas_m2)) / 1_000_000.0
+    total_area_km2 = float(np.sum(areas_m2[valid])) / 1_000_000.0
     drop_area_km2 = float(np.sum(areas_m2[changed_drop])) / 1_000_000.0
     gain_area_km2 = float(np.sum(areas_m2[changed_gain])) / 1_000_000.0
 
-    hist_counts, hist_edges = np.histogram(log_ratio_db.ravel(), bins=24)
+    # Changed pixel counts
+    changed_pixels = int(np.sum(changed_drop) + np.sum(changed_gain))
 
+    # ------------------------------------------------------------------
+    # Histogram — valid pixels only
+    # ------------------------------------------------------------------
+    valid_log_ratio = log_ratio_db[valid]
+    hist_counts, hist_edges = np.histogram(valid_log_ratio, bins=24)
+
+    # ------------------------------------------------------------------
+    # Provenance metadata
+    # ------------------------------------------------------------------
     provenance = {
         "tier": tier,
         "source_name": label,
@@ -661,6 +993,11 @@ def compute_sar_change_detection(
     }
     if pixel_area_meta is not None:
         provenance["pixel_area_meta"] = pixel_area_meta
+
+    # ------------------------------------------------------------------
+    # Summary statistics — valid pixels only
+    # ------------------------------------------------------------------
+    pct_changed = round(100.0 * changed_pixels / max(1, valid_pixels), 2)
 
     return {
         "provenance": provenance,
@@ -675,17 +1012,21 @@ def compute_sar_change_detection(
             "total_area_km2": round(total_area_km2, 3),
             "backscatter_drop_area_km2": round(drop_area_km2, 3),
             "backscatter_gain_area_km2": round(gain_area_km2, 3),
-            "pct_changed": round(100.0 * (np.sum(changed_drop) + np.sum(changed_gain)) / max(1, log_ratio_db.size), 2),
-            "mean_log_ratio_db": round(float(np.mean(log_ratio_db)), 3),
-            "std_log_ratio_db": round(float(np.std(log_ratio_db)), 3),
+            "pct_changed": pct_changed,
+            "valid_pixels": valid_pixels,
+            "excluded_pixels": excluded_pixels,
+            "changed_pixels": changed_pixels,
+            "valid_data_coverage_pct": coverage_pct,
+            "mean_log_ratio_db": round(float(np.mean(valid_log_ratio)), 3),
+            "std_log_ratio_db": round(float(np.std(valid_log_ratio)), 3),
         },
         "histogram": {
             "centers_db": [round(float(0.5 * (hist_edges[i] + hist_edges[i + 1])), 3) for i in range(len(hist_counts))],
             "counts": [int(c) for c in hist_counts],
         },
         "images": {
-            "before_png": _render_scalar_png(10.0 * np.log10(f1), "sar"),
-            "after_png": _render_scalar_png(10.0 * np.log10(f2), "sar"),
+            "before_png": _render_scalar_png(10.0 * np.log10(i1_pos), "sar"),
+            "after_png": _render_scalar_png(10.0 * np.log10(i2_pos), "sar"),
             "log_ratio_png": _render_scalar_png(log_ratio_db, "diverging"),
             "change_mask_png": _render_scalar_png(mask_arr, "mask"),
         },
@@ -704,9 +1045,12 @@ def compute_sar_change_from_files(
     threshold_mode: Literal["fixed", "otsu"] = "fixed",
     pixel_grid_only: bool = False,
 ) -> dict:
-    i1, m1 = _read_raster_bytes(before_bytes, before_name)
-    i2_raw, m2 = _read_raster_bytes(after_bytes, after_name)
-    i2 = _align_second_raster(i1, m1, i2_raw, m2, is_categorical=False, pixel_grid_only=pixel_grid_only)
+    i1, v1, m1 = _read_raster_bytes(before_bytes, before_name)
+    i2_raw, v2, m2 = _read_raster_bytes(after_bytes, after_name)
+    i2, v2_aligned = _align_second_raster(
+        i1, m1, i2_raw, m2, is_categorical=False,
+        pixel_grid_only=pixel_grid_only, src_valid=v2,
+    )
     area_kind = _determine_area_kind(m1.get("crs"))
     areas_m2 = _compute_pixel_areas(i1, m1.get("transform"), m1.get("crs"), area_kind=area_kind)
     pixel_area_meta = _pixel_area_metadata(m1.get("crs"), areas_m2)
@@ -1070,9 +1414,12 @@ def compute_lulc_from_files(
     *,
     pixel_grid_only: bool = False,
 ) -> dict:
-    t1, m1 = _read_raster_bytes(before_bytes, before_name)
-    t2_raw, m2 = _read_raster_bytes(after_bytes, after_name)
-    t2 = _align_second_raster(t1, m1, t2_raw, m2, is_categorical=True, pixel_grid_only=pixel_grid_only)
+    t1, v1, m1 = _read_raster_bytes(before_bytes, before_name)
+    t2_raw, v2, m2 = _read_raster_bytes(after_bytes, after_name)
+    t2, v2_aligned = _align_second_raster(
+        t1, m1, t2_raw, m2, is_categorical=True,
+        pixel_grid_only=pixel_grid_only, src_valid=v2,
+    )
     area_kind = _determine_area_kind(m1.get("crs"))
     areas_m2 = _compute_pixel_areas(t1, m1.get("transform"), m1.get("crs"), area_kind=area_kind)
     pixel_area_meta = _pixel_area_metadata(m1.get("crs"), areas_m2)

@@ -52,7 +52,7 @@ def _make_geotiff_bytes(
             os.remove(path)
 
 
-def _read(arr_bytes: bytes, name: str = "r.tif") -> tuple[np.ndarray, dict]:
+def _read(arr_bytes: bytes, name: str = "r.tif") -> tuple[np.ndarray, np.ndarray, dict]:
     return rs._read_raster_bytes(arr_bytes, name)
 
 

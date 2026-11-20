@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Cpu,
-  KeyRound,
+  ShieldCheck,
   RefreshCw,
   Server,
   TrendingUp,
@@ -14,6 +14,7 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import {
+  AuthStatusResponse,
   getBackendBaseUrl,
   HealthResponse,
   phase2Api,
@@ -37,6 +38,7 @@ export const Phase2Lab: React.FC<Phase2LabProps> = ({ initialHandoff, onClearHan
   const [activeTab, setActiveTab] = useState<Phase2ModuleId>('forecast_mcmc');
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthChecking, setHealthChecking] = useState(false);
+  const [authStatus, setAuthStatus] = useState<AuthStatusResponse | null>(null);
 
   const [localHandoff, setLocalHandoff] = useState<Phase2SeriesHandoff | null>(initialHandoff ?? null);
   const [externalCube, setExternalCube] = useState<{
@@ -44,15 +46,10 @@ export const Phase2Lab: React.FC<Phase2LabProps> = ({ initialHandoff, onClearHan
     cube: (number | null)[][][];
   } | null>(null);
 
-  // Settings / Session Credentials drawer state
+  // Backend settings drawer state (no credential inputs: credentials are server-managed)
   const [showAuthDrawer, setShowAuthDrawer] = useState(false);
   const [backendUrlInput, setBackendUrlInput] = useState(getBackendBaseUrl());
-  const [edlToken, setEdlToken] = useState('');
-  const [edlUser, setEdlUser] = useState('');
-  const [edlPass, setEdlPass] = useState('');
-  const [firmsKey, setFirmsKey] = useState('');
-  const [authSaving, setAuthSaving] = useState(false);
-  const [authNotice, setAuthNotice] = useState<string | null>(null);
+  const [backendNotice, setBackendNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (initialHandoff) {
@@ -61,25 +58,39 @@ export const Phase2Lab: React.FC<Phase2LabProps> = ({ initialHandoff, onClearHan
     }
   }, [initialHandoff]);
 
-  const checkHealth = async () => {
+  const checkHealth = useCallback(async () => {
     setHealthChecking(true);
     try {
       const h = await phase2Api.getHealth();
       setHealth(h);
+      setAuthStatus(h.auth);
     } catch {
       setHealth(null);
+      setAuthStatus(null);
     } finally {
       setHealthChecking(false);
     }
-  };
+  }, []);
+
+  const refreshAuthStatus = useCallback(async () => {
+    setHealthChecking(true);
+    try {
+      const status = await phase2Api.getAuthStatus();
+      setAuthStatus(status);
+    } catch {
+      setAuthStatus(null);
+    } finally {
+      setHealthChecking(false);
+    }
+  }, []);
 
   useEffect(() => {
     void checkHealth();
-  }, []);
+  }, [checkHealth]);
 
   const handleSaveBackendUrl = () => {
     setBackendBaseUrl(backendUrlInput);
-    setAuthNotice(
+    setBackendNotice(
       backendUrlInput.trim()
         ? `Backend target updated to ${backendUrlInput.trim()}`
         : 'Backend target reset to Vite /api proxy (default localhost:8000)'
@@ -87,35 +98,11 @@ export const Phase2Lab: React.FC<Phase2LabProps> = ({ initialHandoff, onClearHan
     void checkHealth();
   };
 
-  const handleSaveSessionAuth = async (clear = false) => {
-    setAuthSaving(true);
-    setAuthNotice(null);
-    try {
-      await phase2Api.configureAuth(
-        clear
-          ? { clear_session: true }
-          : {
-              earthdata_token: edlToken.trim() || undefined,
-              earthdata_username: edlUser.trim() || undefined,
-              earthdata_password: edlPass.trim() || undefined,
-              firms_map_key: firmsKey.trim() || undefined,
-            }
-      );
-      if (clear) {
-        setEdlToken('');
-        setEdlUser('');
-        setEdlPass('');
-        setFirmsKey('');
-      }
-      await checkHealth();
-      setAuthNotice(
-        clear ? 'Session credentials cleared.' : 'Session credentials registered in Python backend memory.'
-      );
-    } catch (err) {
-      setAuthNotice(err instanceof Error ? err.message : 'Failed to configure session credentials');
-    } finally {
-      setAuthSaving(false);
+  const credentialSourceLabel = (source: string, configured: boolean): string => {
+    if (!configured) {
+      return 'Not configured (keyless fallback)';
     }
+    return source === 'environment' ? 'Configured via server environment' : source;
   };
 
   const modules: Array<{ id: Phase2ModuleId; label: string; icon: React.FC<{ className?: string }> }> = [
@@ -182,7 +169,7 @@ export const Phase2Lab: React.FC<Phase2LabProps> = ({ initialHandoff, onClearHan
           </div>
         </div>
 
-        {/* Collapsible Backend URL + Session NASA Credentials Drawer */}
+        {/* Collapsible Backend URL & credential status drawer (no credential inputs: server-managed) */}
         {showAuthDrawer && (
           <div className="rounded-xl bg-ink-950/90 border border-ink-700 p-4 space-y-4">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -215,63 +202,41 @@ export const Phase2Lab: React.FC<Phase2LabProps> = ({ initialHandoff, onClearHan
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5 text-xs font-bold text-silver-100">
-                    <KeyRound className="w-4 h-4 text-gold-300" />
-                    Session-Only NASA Credentials (In-Memory Only)
+                    <ShieldCheck className="w-4 h-4 text-gold-300" />
+                    NASA Credential Status
                   </div>
-                  {health && (
-                    <span className="text-[10px] text-silver-500">
-                      EDL: {health.auth.earthdata_configured ? `Active (${health.auth.earthdata_source})` : 'Keyless'} &middot;
-                      FIRMS: {health.auth.firms_configured ? `Active (${health.auth.firms_source})` : 'EONET Fallback'}
-                    </span>
-                  )}
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="password"
-                    value={firmsKey}
-                    onChange={(e) => setFirmsKey(e.target.value)}
-                    placeholder="NASA FIRMS MAP_KEY"
-                    className="px-2.5 py-1.5 rounded-lg bg-ink-900 border border-ink-700 text-xs text-silver-100"
-                  />
-                  <input
-                    type="password"
-                    value={edlToken}
-                    onChange={(e) => setEdlToken(e.target.value)}
-                    placeholder="Earthdata Bearer Token"
-                    className="px-2.5 py-1.5 rounded-lg bg-ink-900 border border-ink-700 text-xs text-silver-100"
-                  />
-                  <input
-                    type="text"
-                    value={edlUser}
-                    onChange={(e) => setEdlUser(e.target.value)}
-                    placeholder="Earthdata Username (opt)"
-                    className="px-2.5 py-1.5 rounded-lg bg-ink-900 border border-ink-700 text-xs text-silver-100"
-                  />
-                  <input
-                    type="password"
-                    value={edlPass}
-                    onChange={(e) => setEdlPass(e.target.value)}
-                    placeholder="Earthdata Password (opt)"
-                    className="px-2.5 py-1.5 rounded-lg bg-ink-900 border border-ink-700 text-xs text-silver-100"
-                  />
-                </div>
-                <div className="flex flex-wrap items-center gap-2 pt-1">
                   <button
-                    onClick={() => void handleSaveSessionAuth(false)}
-                    disabled={authSaving}
-                    className="px-3 py-1.5 rounded-lg bg-gold-400 hover:bg-gold-400 disabled:opacity-50 text-xs font-bold text-silver-100 cursor-pointer"
+                    onClick={() => void refreshAuthStatus()}
+                    disabled={healthChecking}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-ink-900 hover:bg-ink-800 border border-ink-700 text-[10px] font-semibold text-silver-300 cursor-pointer"
                   >
-                    Save Session Keys
+                    <RefreshCw className={`w-3 h-3 ${healthChecking ? 'animate-spin' : ''}`} />
+                    Refresh
                   </button>
-                  <button
-                    onClick={() => void handleSaveSessionAuth(true)}
-                    disabled={authSaving}
-                    className="px-3 py-1.5 rounded-lg bg-ink-800 hover:bg-ink-700 text-xs text-silver-300 cursor-pointer"
-                  >
-                    Clear Session
-                  </button>
-                  {authNotice && <span className="text-[11px] text-gold-400">{authNotice}</span>}
                 </div>
+                <p className="text-[11px] text-silver-500">
+                  Credentials are configured server-side via environment variables (EARTHDATA_TOKEN,
+                  EARTHDATA_USERNAME / EARTHDATA_PASSWORD, NASA_FIRMS_MAP_KEY). They cannot be set from the
+                  browser. This panel reflects the deployed backend status only.
+                </p>
+                <div className="flex items-center gap-2 text-[10px] text-silver-500">
+                  <span>
+                    EDL: <span className="text-silver-300">{credentialSourceLabel(authStatus?.earthdata_source ?? 'none', authStatus?.earthdata_configured ?? false)}</span>
+                  </span>
+                  <span>&middot;</span>
+                  <span>
+                    FIRMS: <span className="text-silver-300">{credentialSourceLabel(authStatus?.firms_source ?? 'none', authStatus?.firms_configured ?? false)}</span>
+                  </span>
+                </div>
+                {authStatus?.keyless_feeds_available?.length ? (
+                  <div className="space-y-0.5 pt-1">
+                    {authStatus.keyless_feeds_available.map((feed, i) => (
+                      <div key={i} className="text-[10px] text-silver-500">
+                        • {feed}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>

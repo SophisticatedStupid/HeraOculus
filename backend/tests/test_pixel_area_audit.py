@@ -60,7 +60,7 @@ def _make_geotiff_bytes(
             os.remove(path)
 
 
-def _read(arr_bytes: bytes, name: str = "r.tif") -> tuple[np.ndarray, dict]:
+def _read(arr_bytes: bytes, name: str = "r.tif") -> tuple[np.ndarray, np.ndarray, dict]:
     return rs._read_raster_bytes(arr_bytes, name)
 
 
@@ -71,7 +71,7 @@ def _read(arr_bytes: bytes, name: str = "r.tif") -> tuple[np.ndarray, dict]:
 def test_10m_square_projected_pixel_area():
     arr = np.ones((6, 8), dtype=np.float32)
     tf = from_origin(500000.0, 5000000.0, 10.0, 10.0)  # 10 m square
-    _, meta = _read(_make_geotiff_bytes(arr, crs="EPSG:32610", transform=tf))
+    _, _, meta = _read(_make_geotiff_bytes(arr, crs="EPSG:32610", transform=tf))
     areas = rs._compute_pixel_areas(arr, meta["transform"], meta["crs"], area_kind="projected")
     assert areas.shape == arr.shape
     assert np.allclose(areas, 100.0, atol=1e-6)
@@ -87,7 +87,7 @@ def test_10m_square_projected_pixel_area():
 def test_rectangular_10x20m_pixel_area():
     arr = np.ones((6, 8), dtype=np.float32)
     tf = Affine(10.0, 0.0, 500000.0, 0.0, -20.0, 5000000.0)  # 10 m x 20 m
-    _, meta = _read(_make_geotiff_bytes(arr, crs="EPSG:32610", transform=tf))
+    _, _, meta = _read(_make_geotiff_bytes(arr, crs="EPSG:32610", transform=tf))
     areas = rs._compute_pixel_areas(arr, meta["transform"], meta["crs"], area_kind="projected")
     assert np.allclose(areas, 200.0, atol=1e-6), areas.flat[:3]
     print("PASS: 10 m x 20 m rectangular pixel area = 200 m^2")
@@ -97,7 +97,7 @@ def test_different_pixel_sizes():
     for px, expected in [(5.0, 25.0), (30.0, 900.0)]:
         arr = np.ones((4, 4), dtype=np.float32)
         tf = from_origin(500000.0, 5000000.0, px, px)
-        _, meta = _read(_make_geotiff_bytes(arr, crs="EPSG:32610", transform=tf))
+        _, _, meta = _read(_make_geotiff_bytes(arr, crs="EPSG:32610", transform=tf))
         areas = rs._compute_pixel_areas(arr, meta["transform"], meta["crs"], area_kind="projected")
         assert np.allclose(areas, expected, atol=1e-6), (px, areas.flat[0], expected)
     print("PASS: different pixel sizes handled")
@@ -110,7 +110,7 @@ def test_feet_based_projected_crs_unit_conversion():
     # 10 ft x 10 ft pixels = 100 ft^2 = 100 * 0.30480060960121924^2 m^2
     arr = np.ones((4, 4), dtype=np.float32)
     tf = from_origin(500000.0, 5000000.0, 10.0, 10.0)
-    _, meta = _read(_make_geotiff_bytes(arr, crs="EPSG:2236", transform=tf))
+    _, _, meta = _read(_make_geotiff_bytes(arr, crs="EPSG:2236", transform=tf))
     areas = rs._compute_pixel_areas(arr, meta["transform"], meta["crs"], area_kind="projected")
     expected = 100.0 * (factor ** 2)
     assert np.allclose(areas, expected, atol=1e-6), (areas.flat[0], expected)
@@ -129,7 +129,7 @@ def test_rotated_affine_transform_pixel_area():
     M = rot @ scale
     tf = Affine(M[0, 0], M[0, 1], 500000.0, M[1, 0], M[1, 1], 5000000.0)
     # area should be det(M) = 100 m^2 (rotation preserves area)
-    _, meta = _read(_make_geotiff_bytes(arr, crs="EPSG:32610", transform=tf))
+    _, _, meta = _read(_make_geotiff_bytes(arr, crs="EPSG:32610", transform=tf))
     areas = rs._compute_pixel_areas(arr, meta["transform"], meta["crs"], area_kind="projected")
     assert np.allclose(areas, 100.0, atol=1e-6), areas.flat[:3]
     print(f"PASS: rotated affine pixel area preserved = {areas.flat[0]:.6f} m^2")
@@ -146,7 +146,7 @@ def test_geographic_pixel_area_latitude_dependence():
     for lat in (lat_h, lat_l):
         tf = from_origin(-114.0, lat, deg, deg)
         arr = np.ones((4, 4), dtype=np.float32)
-        _, meta = _read(_make_geotiff_bytes(arr, crs="EPSG:4326", transform=tf))
+        _, _, meta = _read(_make_geotiff_bytes(arr, crs="EPSG:4326", transform=tf))
         areas = rs._compute_pixel_areas(arr, meta["transform"], meta["crs"], area_kind="geographic")
         meta_out = rs._pixel_area_metadata(meta["crs"], areas)
         assert meta_out["methodology"] == "geodesic_per_cell"
@@ -173,7 +173,7 @@ def test_geographic_nonuniform_pixel_areas():
     # Different latitudes within one grid produce non-constant areas
     tf = from_origin(-114.0, 60.0, 1.0, 1.0)  # spans 60 -> 53 degrees latitude
     arr = np.ones((8, 4), dtype=np.float32)
-    _, meta = _read(_make_geotiff_bytes(arr, crs="EPSG:4326", transform=tf))
+    _, _, meta = _read(_make_geotiff_bytes(arr, crs="EPSG:4326", transform=tf))
     areas = rs._compute_pixel_areas(arr, meta["transform"], meta["crs"], area_kind="geographic")
     assert not np.allclose(areas, areas.flat[0], rtol=1e-9, atol=1e-3), "areas should vary with latitude"
     meta_out = rs._pixel_area_metadata(meta["crs"], areas)

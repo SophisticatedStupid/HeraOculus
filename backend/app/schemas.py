@@ -78,6 +78,7 @@ class ExtremeValueRequest(BaseModel):
     block_size: int = Field(default=12, ge=2, le=60)
     threshold_quantile: float = Field(default=0.85, ge=0.5, le=0.98)
     return_periods: list[float] = Field(default_factory=lambda: [2, 5, 10, 20, 50, 100])
+    observation_frequency: Optional[Literal["daily", "monthly", "annual", "irregular"]] = None
 
 
 class SpatialFdrRequest(BaseModel):

@@ -67,7 +67,7 @@ def _make_geotiff_bytes(
             os.remove(path)
 
 
-def _read(arr_bytes: bytes, name: str = "r.tif") -> tuple[np.ndarray, dict]:
+def _read(arr_bytes: bytes, name: str = "r.tif") -> tuple[np.ndarray, np.ndarray, dict]:
     return rs._read_raster_bytes(arr_bytes, name)
 
 
@@ -82,10 +82,10 @@ def _grid(shape: tuple[int, int], res: float, origin: tuple[float, float] = (500
 def test_same_crs_same_grid_fastpath():
     arr = np.arange(16, dtype=np.float32).reshape(4, 4)
     tf = _grid((4, 4), 10.0)
-    ref, ref_meta = _read(_make_geotiff_bytes(arr, crs="EPSG:32610", transform=tf))
-    src, src_meta = _read(_make_geotiff_bytes(arr + 1.0, crs="EPSG:32610", transform=tf))
+    ref, _, ref_meta = _read(_make_geotiff_bytes(arr, crs="EPSG:32610", transform=tf))
+    src, _, src_meta = _read(_make_geotiff_bytes(arr + 1.0, crs="EPSG:32610", transform=tf))
 
-    out = rs._align_second_raster(ref, ref_meta, src, src_meta, is_categorical=False)
+    out, _ = rs._align_second_raster(ref, ref_meta, src, src_meta, is_categorical=False)
     assert out.shape == ref.shape
     # Identical grid: values pass through unchanged (no resampling)
     assert np.allclose(out, arr + 1.0)
@@ -103,9 +103,9 @@ def test_same_crs_different_resolution_resamples_to_ref_grid():
     src_arr = np.full((4, 4), 5.0, dtype=np.float32)
     src_bytes = _make_geotiff_bytes(src_arr, crs="EPSG:32610", transform=_grid((4, 4), 20.0))
 
-    ref, ref_meta = _read(ref_bytes)
-    src, src_meta = _read(src_bytes)
-    out = rs._align_second_raster(ref, ref_meta, src, src_meta, is_categorical=False)
+    ref, _, ref_meta = _read(ref_bytes)
+    src, _, src_meta = _read(src_bytes)
+    out, _ = rs._align_second_raster(ref, ref_meta, src, src_meta, is_categorical=False)
     assert out.shape == ref.shape, (out.shape, ref.shape)
     valid = np.isfinite(out)
     assert np.allclose(out[valid], 5.0, atol=1e-6)
@@ -123,9 +123,9 @@ def test_same_crs_shifted_grid_aligns_to_ref():
     ref_arr = np.full((6, 6), 12.0, dtype=np.float32)
     src_arr = np.full((6, 6), 12.0, dtype=np.float32)
 
-    ref, ref_meta = _read(_make_geotiff_bytes(ref_arr, crs="EPSG:32610", transform=ref_tf))
-    src, src_meta = _read(_make_geotiff_bytes(src_arr, crs="EPSG:32610", transform=src_tf))
-    out = rs._align_second_raster(ref, ref_meta, src, src_meta, is_categorical=False)
+    ref, _, ref_meta = _read(_make_geotiff_bytes(ref_arr, crs="EPSG:32610", transform=ref_tf))
+    src, _, src_meta = _read(_make_geotiff_bytes(src_arr, crs="EPSG:32610", transform=src_tf))
+    out, _ = rs._align_second_raster(ref, ref_meta, src, src_meta, is_categorical=False)
     assert out.shape == ref.shape
     valid = np.isfinite(out)
     assert valid.sum() > 0
@@ -145,11 +145,11 @@ def test_different_projected_crs_reprojects():
     ref_arr = np.full((8, 8), 100.0, dtype=np.float32)
     src_arr = np.full((8, 8), 100.0, dtype=np.float32)
 
-    ref, ref_meta = _read(_make_geotiff_bytes(ref_arr, crs="EPSG:32610", transform=ref_tf))
-    src, src_meta = _read(_make_geotiff_bytes(src_arr, crs="EPSG:26910", transform=src_tf))
+    ref, _, ref_meta = _read(_make_geotiff_bytes(ref_arr, crs="EPSG:32610", transform=ref_tf))
+    src, _, src_meta = _read(_make_geotiff_bytes(src_arr, crs="EPSG:26910", transform=src_tf))
     assert not rs._crs_equivalent(ref_meta["crs"], src_meta["crs"])
 
-    out = rs._align_second_raster(ref, ref_meta, src, src_meta, is_categorical=False)
+    out, _ = rs._align_second_raster(ref, ref_meta, src, src_meta, is_categorical=False)
     assert out.shape == ref.shape
     # Geographically overlapping CRSs: source projects fully into reference grid.
     valid = np.isfinite(out)
@@ -166,18 +166,18 @@ def test_geographic_vs_projected_crs_reprojects():
     # Reference: WGS84 geographic over a small degree window
     ref_tf = from_origin(-114.0, 37.0, 0.001, 0.001)
     ref_arr = np.full((10, 10), 50.0, dtype=np.float32)
-    ref, ref_meta = _read(_make_geotiff_bytes(ref_arr, crs="EPSG:4326", transform=ref_tf))
+    ref, _, ref_meta = _read(_make_geotiff_bytes(ref_arr, crs="EPSG:4326", transform=ref_tf))
 
     # Source: UTM 11N covering roughly the same area (~ -114 lon, 37 lat)
     # UTM 11N easting ~ 500000 at central meridian -117; near -114 easting ~ 770000
     src_tf = from_origin(760000.0, 4100000.0, 100.0, 100.0)
     src_arr = np.full((10, 10), 50.0, dtype=np.float32)
-    src, src_meta = _read(_make_geotiff_bytes(src_arr, crs="EPSG:32611", transform=src_tf))
+    src, _, src_meta = _read(_make_geotiff_bytes(src_arr, crs="EPSG:32611", transform=src_tf))
 
     assert ref_meta["crs"].is_geographic
     assert not src_meta["crs"].is_geographic
 
-    out = rs._align_second_raster(ref, ref_meta, src, src_meta, is_categorical=False)
+    out, _ = rs._align_second_raster(ref, ref_meta, src, src_meta, is_categorical=False)
     assert out.shape == ref.shape
     # Coverage may be partial due to CRS overlap; assert no crash + shape lock.
     print(f"PASS: geographic vs projected -> shape {out.shape} locked to ref")
@@ -190,8 +190,8 @@ def test_geographic_vs_projected_crs_reprojects():
 def test_both_missing_crs_rejected_by_default():
     arr = np.full((6, 6), 3.0, dtype=np.float32)
     tf = _grid((6, 6), 10.0)
-    ref, ref_meta = _read(_make_geotiff_bytes(arr, crs=None, transform=tf))
-    src, src_meta = _read(_make_geotiff_bytes(arr, crs=None, transform=tf))
+    ref, _, ref_meta = _read(_make_geotiff_bytes(arr, crs=None, transform=tf))
+    src, _, src_meta = _read(_make_geotiff_bytes(arr, crs=None, transform=tf))
     assert ref_meta["crs"] is None and src_meta["crs"] is None
 
     with pytest.raises(ValueError, match="lack CRS"):
@@ -203,10 +203,10 @@ def test_both_missing_crs_pixel_grid_only_mode():
     # Different-sized grids (same extent, different res) so a real resize happens.
     ref_arr = np.full((8, 8), 3.0, dtype=np.float32)
     src_arr = np.full((4, 4), 5.0, dtype=np.float32)
-    ref, ref_meta = _read(_make_geotiff_bytes(ref_arr, crs=None, transform=_grid((8, 8), 10.0)))
-    src, src_meta = _read(_make_geotiff_bytes(src_arr, crs=None, transform=_grid((4, 4), 20.0)))
+    ref, _, ref_meta = _read(_make_geotiff_bytes(ref_arr, crs=None, transform=_grid((8, 8), 10.0)))
+    src, _, src_meta = _read(_make_geotiff_bytes(src_arr, crs=None, transform=_grid((4, 4), 20.0)))
     with pytest.warns(UserWarning, match="Pixel-grid-only"):
-        out = rs._align_second_raster(
+        out, _ = rs._align_second_raster(
             ref, ref_meta, src, src_meta, is_categorical=False, pixel_grid_only=True
         )
     assert out.shape == ref.shape
@@ -216,8 +216,8 @@ def test_both_missing_crs_pixel_grid_only_mode():
 def test_one_missing_crs_rejected():
     arr = np.full((6, 6), 3.0, dtype=np.float32)
     tf = _grid((6, 6), 10.0)
-    ref, ref_meta = _read(_make_geotiff_bytes(arr, crs="EPSG:32610", transform=tf))
-    src, src_meta = _read(_make_geotiff_bytes(arr, crs=None, transform=tf))
+    ref, _, ref_meta = _read(_make_geotiff_bytes(arr, crs="EPSG:32610", transform=tf))
+    src, _, src_meta = _read(_make_geotiff_bytes(arr, crs=None, transform=tf))
     with pytest.raises(ValueError, match="CRS mismatch"):
         rs._align_second_raster(ref, ref_meta, src, src_meta, is_categorical=False)
 
@@ -235,9 +235,9 @@ def test_different_array_dimensions_resample_to_ref():
     ref_arr = np.full((32, 32), 7.0, dtype=np.float32)
     src_arr = np.full((16, 16), 7.0, dtype=np.float32)
     # Same CRS, same extent, different pixel count
-    ref, ref_meta = _read(_make_geotiff_bytes(ref_arr, crs="EPSG:32610", transform=_grid((32, 32), 10.0)))
-    src, src_meta = _read(_make_geotiff_bytes(src_arr, crs="EPSG:32610", transform=_grid((16, 16), 20.0)))
-    out = rs._align_second_raster(ref, ref_meta, src, src_meta, is_categorical=False)
+    ref, _, ref_meta = _read(_make_geotiff_bytes(ref_arr, crs="EPSG:32610", transform=_grid((32, 32), 10.0)))
+    src, _, src_meta = _read(_make_geotiff_bytes(src_arr, crs="EPSG:32610", transform=_grid((16, 16), 20.0)))
+    out, _ = rs._align_second_raster(ref, ref_meta, src, src_meta, is_categorical=False)
     assert out.shape == ref.shape
     print("PASS: different array dimensions -> resampled to ref shape")
 
@@ -252,14 +252,14 @@ def test_nodata_preserved_as_nan_not_zero():
     src_arr = np.full((10, 10), 20.0, dtype=np.float32)
     src_arr[3:7, 3:7] = -9999.0
     tf = _grid((10, 10), 10.0)
-    ref, ref_meta = _read(_make_geotiff_bytes(ref_arr, crs="EPSG:32610", transform=tf))
-    src, src_meta = _read(
+    ref, _, ref_meta = _read(_make_geotiff_bytes(ref_arr, crs="EPSG:32610", transform=tf))
+    src, _, src_meta = _read(
         _make_geotiff_bytes(src_arr, crs="EPSG:32610", transform=tf, nodata=-9999.0)
     )
     # Source nodata must already be NaN after read
     assert np.isnan(src[5, 5])
 
-    out = rs._align_second_raster(ref, ref_meta, src, src_meta, is_categorical=False)
+    out, _ = rs._align_second_raster(ref, ref_meta, src, src_meta, is_categorical=False)
     # Nodata must remain NaN, never become a valid zero-valued measurement
     assert np.isnan(out[5, 5])
     assert not np.any(out[np.isfinite(out)] == 0.0)
@@ -274,9 +274,9 @@ def test_out_of_coverage_remains_nan():
     src_tf = from_origin(500100.0, 4999900.0, 10.0, 10.0)  # small offset window
     ref_arr = np.full((40, 40), 1.0, dtype=np.float32)
     src_arr = np.full((5, 5), 9.0, dtype=np.float32)
-    ref, ref_meta = _read(_make_geotiff_bytes(ref_arr, crs="EPSG:32610", transform=ref_tf))
-    src, src_meta = _read(_make_geotiff_bytes(src_arr, crs="EPSG:32610", transform=src_tf))
-    out = rs._align_second_raster(ref, ref_meta, src, src_meta, is_categorical=False)
+    ref, _, ref_meta = _read(_make_geotiff_bytes(ref_arr, crs="EPSG:32610", transform=ref_tf))
+    src, _, src_meta = _read(_make_geotiff_bytes(src_arr, crs="EPSG:32610", transform=src_tf))
+    out, _ = rs._align_second_raster(ref, ref_meta, src, src_meta, is_categorical=False)
     assert out.shape == ref.shape
     # Corner outside source coverage == NaN
     assert np.isnan(out[0, 0])
@@ -297,10 +297,10 @@ def test_categorical_nearest_preserves_classes():
     src_arr[:2, 2:] = 2.0
     src_arr[2:, :2] = 3.0
     src_arr[2:, 2:] = 4.0
-    ref, ref_meta = _read(_make_geotiff_bytes(ref_arr, crs="EPSG:32610", transform=_grid((8, 8), 10.0)))
-    src, src_meta = _read(_make_geotiff_bytes(src_arr, crs="EPSG:32610", transform=_grid((4, 4), 20.0)))
+    ref, _, ref_meta = _read(_make_geotiff_bytes(ref_arr, crs="EPSG:32610", transform=_grid((8, 8), 10.0)))
+    src, _, src_meta = _read(_make_geotiff_bytes(src_arr, crs="EPSG:32610", transform=_grid((4, 4), 20.0)))
 
-    out = rs._align_second_raster(ref, ref_meta, src, src_meta, is_categorical=True)
+    out, _ = rs._align_second_raster(ref, ref_meta, src, src_meta, is_categorical=True)
     assert out.shape == ref.shape
     valid = np.isfinite(out)
     # Nearest-neighbour: every output value must be an existing class label {1,2,3,4}
@@ -315,9 +315,9 @@ def test_continuous_uses_bilinear_interpolation():
     # A linear ramp on a coarse grid should yield intermediate values after bilinear
     src_arr = np.tile(np.array([0.0, 10.0], dtype=np.float32), (2, 1))  # 2x2
     ref_arr = np.zeros((20, 20), dtype=np.float32)
-    ref, ref_meta = _read(_make_geotiff_bytes(ref_arr, crs="EPSG:32610", transform=_grid((20, 20), 10.0)))
-    src, src_meta = _read(_make_geotiff_bytes(src_arr, crs="EPSG:32610", transform=_grid((2, 2), 100.0)))
-    out = rs._align_second_raster(ref, ref_meta, src, src_meta, is_categorical=False)
+    ref, _, ref_meta = _read(_make_geotiff_bytes(ref_arr, crs="EPSG:32610", transform=_grid((20, 20), 10.0)))
+    src, _, src_meta = _read(_make_geotiff_bytes(src_arr, crs="EPSG:32610", transform=_grid((2, 2), 100.0)))
+    out, _ = rs._align_second_raster(ref, ref_meta, src, src_meta, is_categorical=False)
     valid = out[np.isfinite(out)]
     # Bilinear should produce values strictly between 0 and 10 somewhere
     assert np.any((valid > 1e-3) & (valid < 10.0 - 1e-3))

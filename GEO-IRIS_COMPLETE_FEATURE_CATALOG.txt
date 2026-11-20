@@ -59,7 +59,7 @@ D:\Geo-Iris-main\Geo-Iris-main\
   │   │   │   ├─ schemas.py            Pydantic v2 request/response schemas
   │   │   │   ├─ routers/
   │   │   │   │   ├─ __init__.py
-  │   │   │   │   ├─ health.py         Health check + auth status/configure
+  │   │   │   │   ├─ health.py         Health check + auth status (read-only)
   │   │   │   │   ├─ earthdata.py      NetCDF4, AppEEARS, vertical profiles, trace gases
   │   │   │   │   ├─ firms.py          NASA FIRMS active fire queries
   │   │   │   │   ├─ rasters.py        DEM DoD, SAR change, LULC, ASF search
@@ -67,7 +67,7 @@ D:\Geo-Iris-main\Geo-Iris-main\
   │   │   │   │   └─ utils.py          Upload file size enforcement
   │   │   │   ├─ services/
   │   │   │   │   ├─ __init__.py
-  │   │   │   │   ├─ auth_store.py     Thread-safe session credential store (masked)
+  │   │   │   │   ├─ auth_store.py     Read-only env-based credential store (masked)
   │   │   │   │   ├─ earthdata_service.py NetCDF4/HDF5, CMR, AIRS, trace gases, AppEEARS
   │   │   │   │   ├─ firms_service.py  FIRMS MAP_KEY + EONET v3 keyless fallback
   │   │   │   │   ├─ forecast_service.py SARIMAX forecasting + diagnostics
@@ -251,20 +251,20 @@ D:\Geo-Iris-main\Geo-Iris-main\
   - http_timeout_seconds: 25.0
 
 4.3 Health & Auth (backend/app/routers/health.py)
-  - Health endpoints: status, capabilities, version, docs
-  - Auth endpoints: configure, status, clear session
-  - Secret masking: raw secrets never echoed in responses
-  - Thread-safe credential store with Lock
+   - Health endpoint: status, capabilities, version, docs
+   - Auth endpoints: status only (read-only credential status)
+   - Secret masking: raw secrets never echoed in responses
+   - No per-user credential configuration endpoint (no auth infrastructure)
 
 4.4 Auth Store (backend/app/services/auth_store.py)
-  - Thread-safe credential store (threading.Lock)
-  - Resolves env defaults + session-level overrides
-  - Credentials: earthdata_token, earthdata_username, earthdata_password,
-    firms_map_key
-  - Secret masking: raw secrets never echoed in API responses
-  - Methods: configure(), get_firms_map_key(), get_earthdata_token(),
-    get_earthdata_credentials(), has_earthdata_auth(), status()
-  - Keyless feeds always available: EONET v3, ASF SAR, CMR, local uploads
+   - Thread-safe read-only credential holder (no Lock needed, no mutation)
+   - Resolves credentials exclusively from environment variables at process start
+   - Credentials: earthdata_token, earthdata_username, earthdata_password,
+     firms_map_key
+   - Secret masking: raw secrets never echoed in API responses
+   - Methods: get_firms_map_key(), get_earthdata_token(),
+     get_earthdata_credentials(), has_earthdata_auth(), status()
+   - Keyless feeds always available: EONET v3, ASF SAR, CMR, local uploads
 
 4.5 Earthdata Router (backend/app/routers/earthdata.py)
   Prefix: /api/v1/earthdata
@@ -436,12 +436,15 @@ D:\Geo-Iris-main\Geo-Iris-main\
     status_message, citation?
 
 6.2 Auth
-  - AuthConfigRequest: earthdata_token?, earthdata_username?,
-    earthdata_password?, firms_map_key?, clear_session?
-  - AuthStatusResponse: earthdata_configured, earthdata_source,
-    earthdata_username_hint?, earthdata_token_hint?, firms_configured,
-    firms_source, firms_key_hint?, keyless_feeds_available[]
-  - HealthResponse: status, version, capabilities{}, auth
+   - AuthStatusResponse: earthdata_configured, earthdata_source,
+     earthdata_username_hint?, earthdata_token_hint?, firms_configured,
+     firms_source, firms_key_hint?, keyless_feeds_available[]
+   - HealthResponse: status, version, capabilities{}, auth
+   - No AuthConfigRequest schema: credentials are server-managed only
+   - /api/v1/auth/status is the sole auth endpoint (read-only)
+   - /api/v1/auth/configure intentionally absent (404) — no per-user
+     credential configuration to prevent cross-user contamination
+   - /api/v1/health returns full auth status as part of health check
 
 6.3 Time Series Input
   - TimeSeriesInputPoint: date, value?
@@ -546,10 +549,7 @@ D:\Geo-Iris-main\Geo-Iris-main\
 7.2 test_health_and_auth.py (2 tests)
   - test_health_endpoint: status ok, capabilities sarima/bayesian_mcmc/
     spatial_fdr/netcdf4_hdf5_xarray/rasterio_dem_sar_lulc all true
-  - test_auth_configure_masks_and_clears_secrets:
-      Configures credentials, verifies masked hints (sec...877 pattern),
-      verifies raw secrets NOT in response, clears session, verifies
-      source != "session" after clear
+  - test_unauthenticated_user_cannot_configure_credentials: POST /auth/configure returns 404
 
 7.3 test_rasters.py (3 tests)
   - test_dem_preset_and_geotiff_upload:
@@ -571,11 +571,9 @@ D:\Geo-Iris-main\Geo-Iris-main\
   - test_lulc_percentages_consistent: Percentages sum to 100%
 
 7.5 test_auth_security.py (5 tests)
-  - test_auth_token_rotation: Earthdata token rotation
-  - test_firms_key_validation: FIRMS MAP_KEY validation
-  - test_session_isolation: Session-level credential isolation
-  - test_credential_masking: Secrets masked in API responses
-  - test_session_clear: Session clear functionality
+  - test_environment_defaults_still_work: health endpoint succeeds regardless of env state
+  - test_credentials_never_appear_in_response_bodies: raw secrets never in /health or /auth/status
+  - test_environment_variable_isolation_between_simulated_users: no per-user drift, configure absent
 
 7.6 test_changepoint_validation.py (3 tests)
   - test_pettitt_change_point_detection: Valid pettitt detection
@@ -876,7 +874,7 @@ Changes Made:
 - Upload size limits (35 MB)
 - Timeout configuration (25 seconds HTTP)
 - .env.example provided (no committed secrets)
-- Credentials can be cleared via /api/v1/auth/configure with clear_session=true
+- Credentials are read-only from environment variables; no /api/v1/auth/configure endpoint
 
 ================================================================================
 12. DEPLOYMENT
@@ -914,7 +912,7 @@ Changes Made:
 - Graceful degradation: live API -> keyless fallback -> synthetic demo
 - Transparent provenance: every response includes tier, source_name,
   dataset_id, is_live, status_message
-- Thread-safe shared state: auth_store with Lock
+- Read-only credential store: auth_store resolves env vars once at process start
 - Web Worker offloading: heavy stats on client-side worker with fallback
 - Base64 PNG previews: raster spatial outputs embedded as data URIs
 - Pydantic v2 schemas: validated request/response contracts

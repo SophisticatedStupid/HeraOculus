@@ -60,6 +60,7 @@ def extreme_value(payload: ExtremeValueRequest) -> dict:
             dates=payload.dates,
             mode=payload.mode,
             block_size=payload.block_size,
+            observation_frequency=payload.observation_frequency,
             threshold_quantile=payload.threshold_quantile,
             return_periods=payload.return_periods,
         )

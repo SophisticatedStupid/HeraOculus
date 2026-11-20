@@ -155,10 +155,9 @@ Supported settings include:
 | `EARTHDATA_USERNAME` / `EARTHDATA_PASSWORD` | Earthdata login alternative | Empty |
 | `VITE_BACKEND_URL` | Frontend backend base URL for a separately deployed API | Vite `/api` proxy |
 
-FIRMS and Earthdata credentials can also be configured for the current
-backend session through the UI/API. Secrets are masked in status responses and
-are not intended to be persisted by the application. Keyless feeds such as
-NASA POWER, EONET, CMR, ASF search, local uploads, and demonstration fallbacks
+FIRMS and Earthdata credentials are configured exclusively via environment variables on the server.
+Secrets are masked in status responses and are never returned in API responses or frontend state.
+Keyless feeds such as NASA POWER, EONET, CMR, ASF search, local uploads, and demonstration fallbacks
 remain available where supported.
 
 ## Backend API
@@ -169,7 +168,7 @@ OpenAPI documentation is generated at `/docs`.
 
 | Prefix | Operations |
 | --- | --- |
-| `/api/v1` | `GET /health`, `GET /auth/status`, `POST /auth/configure` |
+| `/api/v1` | `GET /health`, `GET /auth/status` |
 | `/api/v1/stats` | `POST /sarima`, `/bayesian-mcmc`, `/extreme-value`, `/spatial-fdr` |
 | `/api/v1/firms` | `POST /fires` |
 | `/api/v1/earthdata` | `POST /granules`, `/appeears-point`, `/vertical-profile`, `/trace-gases`, `/netcdf/inspect`, `/netcdf/extract` |

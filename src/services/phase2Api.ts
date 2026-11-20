@@ -27,14 +27,6 @@ export interface Phase2SeriesHandoff {
   provenanceTier?: ProvenanceTier;
 }
 
-export interface AuthConfigPayload {
-  earthdata_token?: string | null;
-  earthdata_username?: string | null;
-  earthdata_password?: string | null;
-  firms_map_key?: string | null;
-  clear_session?: boolean;
-}
-
 export interface AuthStatusResponse {
   earthdata_configured: boolean;
   earthdata_source: string;
@@ -179,6 +171,7 @@ export interface ExtremeValueRequest {
   dates?: string[];
   mode: 'gev_block_maxima' | 'gpd_pot';
   block_size?: number;
+  observation_frequency?: 'daily' | 'monthly' | 'annual' | 'irregular';
   threshold_quantile?: number;
   return_periods?: number[];
 }
@@ -200,10 +193,29 @@ export interface ExtremeValueResponse {
   empirical_return_plot: Array<{ return_period: number; value: number }>;
   return_levels: Array<{
     return_period: number;
+    return_period_unit?: string;
     return_level: number;
     ci95_low: number | null;
     ci95_high: number | null;
   }>;
+  temporal?: {
+    frequency?: string;
+    frequency_source?: string;
+    block_duration_years?: number;
+    obs_per_year?: number;
+    span_years?: number;
+    exposure_years?: number;
+    n_observations: number;
+    n_valid: number;
+    n_duplicates: number;
+    n_gaps: number;
+    is_monotonic: boolean;
+    coverage_ratio?: number;
+    return_period_unit?: string;
+    temporal_assumption_valid?: boolean;
+    notes?: string[];
+    warnings?: string[];
+  };
 }
 
 export interface SpatialFdrRequest {
@@ -638,8 +650,6 @@ function postJson<TResponse, TBody>(
 export const phase2Api = {
   getHealth: () => requestApi<HealthResponse>('/api/v1/health', { method: 'GET' }, 6000),
   getAuthStatus: () => requestApi<AuthStatusResponse>('/api/v1/auth/status', { method: 'GET' }, 6000),
-  configureAuth: (payload: AuthConfigPayload) =>
-    postJson<AuthStatusResponse, AuthConfigPayload>('/api/v1/auth/configure', payload, 10000),
 
   // Advanced Statistical Modeling
   runSarima: (payload: SarimaRequest) =>
