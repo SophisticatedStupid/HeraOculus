@@ -139,7 +139,7 @@ def test_spatial_fdr_prunes_false_positives():
     assert resp.status_code == 200
     data = resp.json()
     s = data["summary"]
-    assert s["total_valid_cells"] == 14 * 16
+    assert s["total_valid_pixels"] == 14 * 16
     assert s["fdr_significant_cells"] <= s["raw_significant_cells"]
     assert data["images"]["trend_png"].startswith("data:image/png;base64,")
     assert data["images"]["fdr_png"].startswith("data:image/png;base64,")

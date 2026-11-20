@@ -21,37 +21,44 @@ from skimage.filters import threshold_otsu
 from sklearn.metrics import cohen_kappa_score, confusion_matrix
 
 
-def _read_raster_bytes(raw_bytes: bytes, filename: str) -> tuple[np.ndarray, np.ndarray, dict]:
-    """Read a raster from bytes, returning (array, validity_mask, metadata).
+def _read_raster_file(path: str) -> tuple[np.ndarray, np.ndarray, dict]:
+    """Read a raster from a file path, returning (array, validity_mask, metadata).
 
     The array is float64 with NaN where nodata / missing values occur.  The
     validity mask is ``True`` where the pixel is finite (valid).  This separates
     raster values from their validity so downstream resampling cannot
     contaminate valid pixels with invalid source cells.
     """
+    with rasterio.open(path) as src:
+        arr = src.read(1).astype(float)
+        nodata = src.nodata
+        if nodata is not None:
+            arr = np.where(arr == nodata, np.nan, arr)
+        valid = np.isfinite(arr)
+        meta = {
+            "crs": src.crs,
+            "transform": src.transform,
+            "width": src.width,
+            "height": src.height,
+            "res": src.res,
+            "nodata": nodata,
+        }
+        return arr, valid, meta
+
+
+def _read_raster_bytes(raw_bytes: bytes, filename: str) -> tuple[np.ndarray, np.ndarray, dict]:
+    """Read a raster from in-memory bytes via a temporary file (backward-compat wrapper)."""
+    import tempfile
+    import os as _os
     suffix = Path(filename).suffix.lower() or ".tif"
     fd, tmp_path = tempfile.mkstemp(suffix=suffix)
     try:
-        with os.fdopen(fd, "wb") as handle:
+        with _os.fdopen(fd, "wb") as handle:
             handle.write(raw_bytes)
-        with rasterio.open(tmp_path) as src:
-            arr = src.read(1).astype(float)
-            nodata = src.nodata
-            if nodata is not None:
-                arr = np.where(arr == nodata, np.nan, arr)
-            valid = np.isfinite(arr)
-            meta = {
-                "crs": src.crs,
-                "transform": src.transform,
-                "width": src.width,
-                "height": src.height,
-                "res": src.res,
-                "nodata": nodata,
-            }
-            return arr, valid, meta
+        return _read_raster_file(tmp_path)
     finally:
         try:
-            os.remove(tmp_path)
+            _os.remove(tmp_path)
         except OSError:
             pass
 
@@ -620,17 +627,17 @@ def compute_dem_differencing(
     }
 
 
-def compute_dem_differencing_from_files(
-    before_bytes: bytes,
+def compute_dem_differencing_from_paths(
+    before_path: str,
     before_name: str,
-    after_bytes: bytes,
+    after_path: str,
     after_name: str,
     *,
     lod_threshold_m: float = 0.75,
     pixel_grid_only: bool = False,
 ) -> dict:
-    z1, v1, m1 = _read_raster_bytes(before_bytes, before_name)
-    z2_raw, v2, m2 = _read_raster_bytes(after_bytes, after_name)
+    z1, v1, m1 = _read_raster_file(before_path)
+    z2_raw, v2, m2 = _read_raster_file(after_path)
     z2, v2_aligned = _align_second_raster(
         z1, m1, z2_raw, m2, is_categorical=False,
         pixel_grid_only=pixel_grid_only, src_valid=v2,
@@ -647,6 +654,38 @@ def compute_dem_differencing_from_files(
         pixel_area_meta=pixel_area_meta,
         is_upload=True,
     )
+
+
+def compute_dem_differencing_from_files(
+    before_bytes: bytes,
+    before_name: str,
+    after_bytes: bytes,
+    after_name: str,
+    *,
+    lod_threshold_m: float = 0.75,
+    pixel_grid_only: bool = False,
+) -> dict:
+    """Backward-compatible wrapper: writes bytes to temp files then delegates."""
+    import tempfile
+    import os as _os
+    b1_fd, b1_path = tempfile.mkstemp(suffix=".tif")
+    b2_fd, b2_path = tempfile.mkstemp(suffix=".tif")
+    try:
+        with _os.fdopen(b1_fd, "wb") as fh:
+            fh.write(before_bytes)
+        with _os.fdopen(b2_fd, "wb") as fh:
+            fh.write(after_bytes)
+        return compute_dem_differencing_from_paths(
+            b1_path, before_name, b2_path, after_name,
+            lod_threshold_m=lod_threshold_m,
+            pixel_grid_only=pixel_grid_only,
+        )
+    finally:
+        for p in (b1_path, b2_path):
+            try:
+                _os.remove(p)
+            except OSError:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -1033,10 +1072,10 @@ def compute_sar_change_detection(
     }
 
 
-def compute_sar_change_from_files(
-    before_bytes: bytes,
+def compute_sar_change_from_paths(
+    before_path: str,
     before_name: str,
-    after_bytes: bytes,
+    after_path: str,
     after_name: str,
     *,
     speckle_filter: Literal["none", "lee", "mean"] = "lee",
@@ -1045,8 +1084,8 @@ def compute_sar_change_from_files(
     threshold_mode: Literal["fixed", "otsu"] = "fixed",
     pixel_grid_only: bool = False,
 ) -> dict:
-    i1, v1, m1 = _read_raster_bytes(before_bytes, before_name)
-    i2_raw, v2, m2 = _read_raster_bytes(after_bytes, after_name)
+    i1, v1, m1 = _read_raster_file(before_path)
+    i2_raw, v2, m2 = _read_raster_file(after_path)
     i2, v2_aligned = _align_second_raster(
         i1, m1, i2_raw, m2, is_categorical=False,
         pixel_grid_only=pixel_grid_only, src_valid=v2,
@@ -1065,6 +1104,44 @@ def compute_sar_change_from_files(
         pixel_area_meta=pixel_area_meta,
         is_upload=True,
     )
+
+
+def compute_sar_change_from_files(
+    before_bytes: bytes,
+    before_name: str,
+    after_bytes: bytes,
+    after_name: str,
+    *,
+    speckle_filter: Literal["none", "lee", "mean"] = "lee",
+    window_size: int = 5,
+    threshold_db: float = 3.0,
+    threshold_mode: Literal["fixed", "otsu"] = "fixed",
+    pixel_grid_only: bool = False,
+) -> dict:
+    """Backward-compatible wrapper: writes bytes to temp files then delegates."""
+    import tempfile
+    import os as _os
+    b1_fd, b1_path = tempfile.mkstemp(suffix=".tif")
+    b2_fd, b2_path = tempfile.mkstemp(suffix=".tif")
+    try:
+        with _os.fdopen(b1_fd, "wb") as fh:
+            fh.write(before_bytes)
+        with _os.fdopen(b2_fd, "wb") as fh:
+            fh.write(after_bytes)
+        return compute_sar_change_from_paths(
+            b1_path, before_name, b2_path, after_name,
+            speckle_filter=speckle_filter,
+            window_size=window_size,
+            threshold_db=threshold_db,
+            threshold_mode=threshold_mode,
+            pixel_grid_only=pixel_grid_only,
+        )
+    finally:
+        for p in (b1_path, b2_path):
+            try:
+                _os.remove(p)
+            except OSError:
+                pass
 
 
 def search_asf_sar_granules(
@@ -1406,16 +1483,16 @@ def compute_lulc_transitions(
     }
 
 
-def compute_lulc_from_files(
-    before_bytes: bytes,
+def compute_lulc_from_paths(
+    before_path: str,
     before_name: str,
-    after_bytes: bytes,
+    after_path: str,
     after_name: str,
     *,
     pixel_grid_only: bool = False,
 ) -> dict:
-    t1, v1, m1 = _read_raster_bytes(before_bytes, before_name)
-    t2_raw, v2, m2 = _read_raster_bytes(after_bytes, after_name)
+    t1, v1, m1 = _read_raster_file(before_path)
+    t2_raw, v2, m2 = _read_raster_file(after_path)
     t2, v2_aligned = _align_second_raster(
         t1, m1, t2_raw, m2, is_categorical=True,
         pixel_grid_only=pixel_grid_only, src_valid=v2,
@@ -1430,3 +1507,33 @@ def compute_lulc_from_files(
         pixel_area_meta=pixel_area_meta,
         is_upload=True,
     )
+
+
+def compute_lulc_from_files(
+    before_bytes: bytes,
+    before_name: str,
+    after_bytes: bytes,
+    after_name: str,
+    *,
+    pixel_grid_only: bool = False,
+) -> dict:
+    """Backward-compatible wrapper: writes bytes to temp files then delegates."""
+    import tempfile
+    import os as _os
+    b1_fd, b1_path = tempfile.mkstemp(suffix=".tif")
+    b2_fd, b2_path = tempfile.mkstemp(suffix=".tif")
+    try:
+        with _os.fdopen(b1_fd, "wb") as fh:
+            fh.write(before_bytes)
+        with _os.fdopen(b2_fd, "wb") as fh:
+            fh.write(after_bytes)
+        return compute_lulc_from_paths(
+            b1_path, before_name, b2_path, after_name,
+            pixel_grid_only=pixel_grid_only,
+        )
+    finally:
+        for p in (b1_path, b2_path):
+            try:
+                _os.remove(p)
+            except OSError:
+                pass

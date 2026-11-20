@@ -82,7 +82,18 @@ class ExtremeValueRequest(BaseModel):
 
 
 class SpatialFdrRequest(BaseModel):
-    """Run vectorized Mann-Kendall across a 3D (T, H, W) spatio-temporal grid."""
+    """Run vectorized Mann-Kendall across a 3D (T, H, W) spatio-temporal grid.
+
+    Temporal autocorrelation correction (per pixel, independent of spatial FDR):
+      - "none": no correction; standard MK assumes temporal independence.
+      - "hamed_rao": Hamed & Rao (1998) variance modification using detrended
+        rank autocorrelation at consecutive-year lags. Missing/invalid data and
+        irregular sampling are handled explicitly.
+
+    Spatial FDR methods (BH/BY/Holm/Bonferroni) correct multiple testing across
+    pixels; they do NOT correct temporal autocorrelation within each pixel's time
+    series. Use `temporal_autocorr_correction` for that purpose.
+    """
 
     region_name: Optional[str] = "Arctic & Boreal Sub-Grid"
     center_lat: float = Field(default=68.0, ge=-90.0, le=90.0)
@@ -102,6 +113,10 @@ class SpatialFdrRequest(BaseModel):
         default=None,
         gt=0.0,
         description="Uniform time step between samples in years (e.g. 1/12 for monthly). If provided, temporal slope is computed on the correct decimal-year coordinate.",
+    )
+    temporal_autocorr_correction: Literal["none", "hamed_rao"] = Field(
+        default="none",
+        description="Temporal autocorrelation correction applied per-pixel before FDR. Options: 'none' (standard MK assumes independence); 'hamed_rao' (Hamed & Rao 1998 variance correction for lag-1 autocorrelation).",
     )
 
 

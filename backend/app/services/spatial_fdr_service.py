@@ -143,11 +143,24 @@ def _tie_correction_sum(sorted_vals: np.ndarray) -> np.ndarray:
 def _vectorized_mk_and_slope(
     cube: np.ndarray,
     time_years: Optional[np.ndarray] = None,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Compute vectorized per-cell Mann-Kendall Z, two-sided p-value, OLS slope/decade, and n_valid.
+    autocorr_correction: Literal["none", "hamed_rao"] = "none",
+) -> tuple[
+    np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict
+]:
+    """Compute vectorized per-cell Mann-Kendall Z, two-sided p-value, OLS slope/decade, n_valid,
+    and temporal autocorrelation diagnostics.
 
     Uses tie-corrected variance; only valid observations count for ties.
     Slope is calculated on the supplied time_years (decimal years).
+
+    Autocorrelation handling:
+      - "none": no temporal autocorrelation correction (MK independence assumption).
+      - "hamed_rao": Hamed & Rao (1998) variance modification using detrended
+        rank autocorrelation at consecutive-year lags.
+
+    Returns tuple (Z, p_vals, slope_decade, valid_mask, n_valid, autocorr_diagnostics).
+    autocorr_diagnostics contains per-cell "lag1_rho" (float array) and
+    "variance_correction" (float array; =1.0 when "none").
     """
     T, H, W = cube.shape
     flat = cube.reshape(T, H * W)  # (T, N)
@@ -166,6 +179,15 @@ def _vectorized_mk_and_slope(
     n = n_valid
     base_var = n * (n - 1.0) * (2.0 * n + 5.0)
     var_s = np.maximum((base_var - tie_sum) / 18.0, 1e-9)
+
+    # Estimate lag-1 autocorrelation per cell (consecutive time steps only)
+    lag1_rho = _estimate_lag1_rho(flat)
+
+    # Hamed & Rao (1998) variance correction factor (per cell)
+    variance_correction = np.ones(N, dtype=float)
+    if autocorr_correction == "hamed_rao":
+        variance_correction = _hamed_rao_correction_factor(flat, time_years, n_valid)
+        var_s = var_s * variance_correction
 
     Z = np.zeros(N, dtype=float)
     pos = processed_S > 0
@@ -194,13 +216,187 @@ def _vectorized_mk_and_slope(
     slope_per_year = np.where((den > 1e-12) & (n_valid >= 5), num / np.maximum(den, 1e-12), 0.0)
     slope_decade = slope_per_year * 10.0
 
+    autocorr_diagnostics = {
+        "lag1_rho": lag1_rho.reshape(H, W),
+        "variance_correction": variance_correction.reshape(H, W),
+        "autocorr_method": autocorr_correction,
+    }
+
     return (
         Z.reshape(H, W),
         p_vals.reshape(H, W),
         slope_decade.reshape(H, W),
         (n_valid >= 5).reshape(H, W),
         n_valid.reshape(H, W),
+        autocorr_diagnostics,
     )
+
+
+def _estimate_lag1_rho(flat: np.ndarray) -> np.ndarray:
+    """Estimate per-cell lag-1 autocorrelation using consecutive time steps only.
+
+    NaN/missing observations are excluded; a lag-1 pair contributes only when both
+    endpoints are valid.  Cells with insufficient valid pairs or zero variance return 0.
+    Missing temporal sampling is handled explicitly: non-consecutive valid pairs are
+    never treated as lag-1.
+    """
+    T, N = flat.shape
+    rho = np.zeros(N, dtype=float)
+
+    if T < 3:
+        return rho
+
+    # Pairwise products of consecutive deviations (population mean centering per cell)
+    y = flat
+    valid_mask = np.isfinite(y)
+
+    # Compute cell means over valid observations only
+    n_valid = np.sum(valid_mask, axis=0)
+    y_mean = np.zeros(N, dtype=float)
+    np.divide(
+        np.nansum(np.where(valid_mask, y, 0.0), axis=0),
+        np.maximum(n_valid, 1),
+        out=y_mean,
+        where=n_valid > 0,
+    )
+
+    numerator = np.zeros(N, dtype=float)
+    denominator = np.zeros(N, dtype=float)
+    pair_count = np.zeros(N, dtype=float)
+
+    for i in range(T - 1):
+        a = y[i]
+        b = y[i + 1]
+        pair_valid = valid_mask[i] & valid_mask[i + 1]
+        dev_a = np.where(pair_valid, a - y_mean, 0.0)
+        dev_b = np.where(pair_valid, b - y_mean, 0.0)
+        numerator += np.where(pair_valid, dev_a * dev_b, 0.0)
+        denominator += np.where(pair_valid, dev_a * dev_a, 0.0)
+        pair_count += pair_valid.astype(float)
+
+    sufficient = (pair_count >= 2) & (denominator > 1e-12)
+    rho[sufficient] = numerator[sufficient] / denominator[sufficient]
+    # Clamp to [-1, 1]
+    rho = np.clip(rho, -1.0, 1.0)
+    return rho
+
+
+def _hamed_rao_correction_factor(
+    flat: np.ndarray,
+    time_years: Optional[np.ndarray],
+    n_valid: np.ndarray,
+) -> np.ndarray:
+    """Hamed & Rao (1998) variance modification factor for Mann-Kendall.
+
+    Computes centered detrended rank autocorrelation at consecutive-year lags and
+    returns n/n* variance inflation factor (bounded [0.5, 6.0]).
+    Cells with n_valid < 6 or zero trend/variance return 1.0 (no correction).
+
+    Missing data and irregular time spacing are handled explicitly: only valid
+    observations with matching year lags contribute; gaps are never treated as
+    consecutive.
+    """
+    T, N = flat.shape
+    correction = np.ones(N, dtype=float)
+
+    if T < 6:
+        return correction
+
+    if time_years is None:
+        time_years = np.arange(T, dtype=float)
+    time_years = np.asarray(time_years, dtype=float)
+
+    for cell_idx in range(N):
+        col = flat[:, cell_idx]
+        valid = np.isfinite(col)
+        n_cell = int(valid.sum())
+        if n_cell < 6:
+            continue
+
+        # Detrend using Sen slope on decimal-year time coordinate
+        t_vals = time_years[valid]
+        y_vals = col[valid]
+        slope = _sen_slope_1d(y_vals, t_vals)
+        detrended = y_vals - slope * t_vals
+
+        # Rank the detrended values (average ranks for ties)
+        ranks = _rank_with_ties(detrended)
+        mean_rank = ranks.mean()
+        centered = ranks - mean_rank
+        denom = float(np.sum(centered * centered))
+        if denom <= 1e-12:
+            continue
+
+        # Map each valid observation's original year index to position
+        # year positions are 0..T-1 based on time index
+        year_positions = np.where(valid)[0]
+
+        max_lag = min(12, max(1, n_cell // 4))
+        crit = 1.96 / np.sqrt(n_cell)
+        correction_sum = 0.0
+
+        for lag in range(1, max_lag + 1):
+            num = 0.0
+            pair_count = 0
+            for k in range(len(year_positions)):
+                pos_k = year_positions[k]
+                target_year = pos_k + lag
+                j = np.searchsorted(year_positions, target_year)
+                if j < len(year_positions) and year_positions[j] == target_year:
+                    num += centered[k] * centered[j]
+                    pair_count += 1
+            if pair_count == 0:
+                continue
+            rho = num / denom
+            if abs(rho) > crit:
+                m = n_cell
+                correction_sum += (
+                    (m - lag) * (m - lag - 1) * (m - lag - 2) * rho
+                )
+
+        if abs(correction_sum) > 0:
+            n_over_nstar = (
+                1 + (2.0 / (n_cell * (n_cell - 1) * (n_cell - 2))) * correction_sum
+            )
+            correction[cell_idx] = float(np.clip(n_over_nstar, 0.5, 6.0))
+
+    return correction
+
+
+def _sen_slope_1d(values: np.ndarray, times: np.ndarray) -> float:
+    """Sen's slope (median of pairwise slopes) for a 1D series."""
+    n = values.size
+    if n < 2:
+        return 0.0
+    slopes = []
+    for i in range(n):
+        for j in range(i + 1, n):
+            dt = times[j] - times[i]
+            if abs(dt) > 1e-12:
+                slopes.append((values[j] - values[i]) / dt)
+    if not slopes:
+        return 0.0
+    slopes.sort()
+    m = len(slopes)
+    mid = m // 2
+    return slopes[mid] if m % 2 == 1 else (slopes[mid - 1] + slopes[mid]) / 2.0
+
+
+def _rank_with_ties(values: np.ndarray) -> np.ndarray:
+    """Rank values with average ranks for ties."""
+    n = values.size
+    order = np.argsort(values, kind="mergesort")
+    ranks = np.empty(n, dtype=float)
+    sorted_vals = values[order]
+    i = 0
+    while i < n:
+        j = i + 1
+        while j < n and sorted_vals[j] == sorted_vals[i]:
+            j += 1
+        avg_rank = (i + j - 1) / 2.0 + 1.0
+        ranks[order[i:j]] = avg_rank
+        i = j
+    return ranks
 
 
 def _render_spatial_png(
@@ -357,6 +553,7 @@ def run_spatial_fdr_analysis(
     n_years: int = 20,
     alpha: float = 0.05,
     correction_method: Literal["bh", "by", "holm", "bonferroni"] = "by",
+    temporal_autocorr_correction: Literal["none", "hamed_rao"] = "none",
     cube_input: Optional[list[list[list[Optional[float]]]]] = None,
     seed: int = 42,
     timestamps: Optional[list[str]] = None,
@@ -371,6 +568,16 @@ def run_spatial_fdr_analysis(
     assuming annual spacing.
 
     Existing synthetic-annual benchmarks require no extra temporal metadata.
+
+    Temporal autocorrelation correction (applied per pixel, independent of spatial FDR):
+      - "none": no correction; standard MK assumes temporal independence.
+      - "hamed_rao": Hamed & Rao (1998) variance modification using detrended
+        rank autocorrelation at consecutive-year lags. Missing/invalid data and
+        irregular sampling are handled explicitly (gaps never treated as consecutive).
+
+    Spatial FDR methods (BH, BY, Holm, Bonferroni) correct for *multiple testing*
+    dependence across pixels. They do NOT correct temporal autocorrelation within
+    each pixel's time series. Use `temporal_autocorr_correction` for that.
     """
     if cube_input is not None:
         cube = np.array(
@@ -399,7 +606,9 @@ def run_spatial_fdr_analysis(
         time_step_years=time_step_years,
         is_synthetic=provenance_tier != "user_upload",
     )
-    Z, p_vals, slope_decade, valid_mask, n_valid = _vectorized_mk_and_slope(cube, time_years=time_metadata[0])
+    Z, p_vals, slope_decade, valid_mask, n_valid, autocorr_diag = _vectorized_mk_and_slope(
+        cube, time_years=time_metadata[0], autocorr_correction=temporal_autocorr_correction
+    )
     valid_p = p_vals[valid_mask]
     raw_sig = (p_vals <= alpha) & valid_mask
 
@@ -425,6 +634,13 @@ def run_spatial_fdr_analysis(
     false_positives_pruned = max(0, n_raw_sig - n_fdr_sig)
     area_fraction_sig = round(100.0 * n_fdr_sig / max(1, n_tests), 2)
 
+    # Autocorrelation diagnostics summary
+    lag1_rho = autocorr_diag["lag1_rho"]
+    var_corr = autocorr_diag["variance_correction"]
+    n_mean_rho = float(np.mean(np.abs(lag1_rho[valid_mask]))) if n_tests > 0 else 0.0
+    n_mean_varcorr = float(np.mean(var_corr[valid_mask])) if n_tests > 0 else 0.0
+    n_excluded = int(cube.shape[1] * cube.shape[2] - n_tests)
+
     # Wilks (2016) global field significance threshold (p_(1) vs alpha_global)
     p_sorted = np.sort(valid_p)
     alpha_wilks = alpha / (1.0 + sum(1.0 / k for k in range(2, n_tests + 1))) if correction_method == "by" else alpha
@@ -447,7 +663,10 @@ def run_spatial_fdr_analysis(
         "method": correction_method,
         "alpha": alpha,
         "summary": {
-            "total_valid_cells": n_tests,
+            "total_pixels": int(cube.shape[1] * cube.shape[2]),
+            "total_valid_pixels": n_tests,
+            "excluded_pixels": n_excluded,
+            "tested_hypotheses": n_tests,
             "raw_significant_cells": n_raw_sig,
             "fdr_significant_cells": n_fdr_sig,
             "false_positives_pruned": false_positives_pruned,
@@ -465,6 +684,19 @@ def run_spatial_fdr_analysis(
             "time_step_years": float(np.median(np.diff(time_metadata[0]))) if len(time_metadata[0]) > 1 else float(time_metadata[0][0]),
             "source": time_metadata[1]["source"],
             "resolution": time_metadata[1]["resolution"],
+        },
+        "autocorrelation": {
+            "temporal_correction": temporal_autocorr_correction,
+            "method": "hamed_rao_1998" if temporal_autocorr_correction == "hamed_rao" else "none",
+            "mean_abs_lag1_rho": round(n_mean_rho, 6),
+            "mean_variance_correction": round(n_mean_varcorr, 6),
+            "spatial_fdr_method": correction_method,
+            "note": (
+                "Spatial FDR (BH/BY/Holm/Bonferroni) corrects multiple testing across pixels; "
+                "temporal autocorrelation correction is applied per-pixel before FDR."
+                if temporal_autocorr_correction != "none"
+                else "No temporal autocorrelation correction applied; pixel p-values assume temporal independence."
+            ),
         },
         "images": {
             "trend_png": _render_spatial_png(slope_decade, raw_sig, "diverging"),

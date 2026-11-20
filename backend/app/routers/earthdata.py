@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Optional
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
@@ -19,9 +20,17 @@ from ..services.earthdata_service import (
     proxy_appeears_point_task,
     search_earthdata_granules,
 )
-from .utils import read_checked_upload
+from .utils import cleanup_temp_file, read_checked_upload, validate_upload_signature
 
 router = APIRouter(prefix="/api/v1/earthdata", tags=["Earthdata & NetCDF4"])
+
+# Processing timeout for NetCDF/HDF5 uploads (seconds).
+NETCDF_PROCESS_TIMEOUT = 120.0
+
+
+async def _run_with_timeout(coro, timeout: float = NETCDF_PROCESS_TIMEOUT):
+    """Run an async coroutine with a hard wall-clock timeout."""
+    return await asyncio.wait_for(coro, timeout=timeout)
 
 
 @router.post("/granules")
@@ -73,11 +82,20 @@ def trace_gases(payload: TraceGasRequest) -> dict:
 
 @router.post("/netcdf/inspect")
 async def inspect_netcdf(file: UploadFile = File(...)) -> dict:
-    raw, filename = await read_checked_upload(file)
+    path, filename = await read_checked_upload(file)
+    validate_upload_signature(path, "netcdf_hdf5")
     try:
-        return inspect_netcdf_file(raw, filename)
+        return await _run_with_timeout(
+            asyncio.to_thread(inspect_netcdf_file, path, filename)
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except asyncio.TimeoutError as exc:
+        raise HTTPException(
+            status_code=504, detail="NetCDF inspect timed out."
+        ) from exc
+    finally:
+        cleanup_temp_file(path)
 
 
 @router.post("/netcdf/extract")
@@ -88,15 +106,25 @@ async def extract_netcdf(
     target_lon: Optional[float] = Form(default=None),
     spatial_mean: bool = Form(default=False),
 ) -> dict:
-    raw, filename = await read_checked_upload(file)
+    path, filename = await read_checked_upload(file)
+    validate_upload_signature(path, "netcdf_hdf5")
     try:
-        return extract_netcdf_subset(
-            raw,
-            filename,
-            variable=variable,
-            target_lat=target_lat,
-            target_lon=target_lon,
-            spatial_mean=spatial_mean,
+        return await _run_with_timeout(
+            asyncio.to_thread(
+                extract_netcdf_subset,
+                path,
+                filename,
+                variable=variable,
+                target_lat=target_lat,
+                target_lon=target_lon,
+                spatial_mean=spatial_mean,
+            )
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except asyncio.TimeoutError as exc:
+        raise HTTPException(
+            status_code=504, detail="NetCDF extract timed out."
+        ) from exc
+    finally:
+        cleanup_temp_file(path)

@@ -231,6 +231,7 @@ export interface SpatialFdrRequest {
   seed?: number;
   timestamps?: string[];
   time_step_years?: number;
+  temporal_autocorr_correction?: 'none' | 'hamed_rao';
 }
 
 export interface SpatialFdrResponse {
@@ -246,7 +247,10 @@ export interface SpatialFdrResponse {
     resolution?: string;
   };
   summary: {
-    total_valid_cells: number;
+    total_pixels: number;
+    total_valid_pixels: number;
+    excluded_pixels: number;
+    tested_hypotheses: number;
     raw_significant_cells: number;
     fdr_significant_cells: number;
     false_positives_pruned: number;
@@ -258,6 +262,14 @@ export interface SpatialFdrResponse {
     max_positive_slope_decade: number;
     min_negative_slope_decade: number;
     wilks_effective_alpha: number;
+  };
+  autocorrelation?: {
+    temporal_correction: string;
+    method: string;
+    mean_abs_lag1_rho: number;
+    mean_variance_correction: number;
+    spatial_fdr_method: string;
+    note: string;
   };
   images: {
     trend_png: string;

@@ -29,6 +29,7 @@ export const SpatialFdrPanel: React.FC<SpatialFdrPanelProps> = ({
   const [res, setRes] = useState<SpatialFdrResponse | null>(null);
   const [inspectedCell, setInspectedCell] = useState<{ r: number; c: number } | null>(null);
   const [cubeTimeStep, setCubeTimeStep] = useState(1.0);
+  const [tempAutocorrCorr, setTempAutocorrCorr] = useState<'none' | 'hamed_rao'>('none');
 
   // Auto-detect time step from selected region preset or manual override
 
@@ -49,6 +50,7 @@ export const SpatialFdrPanel: React.FC<SpatialFdrPanelProps> = ({
         correction_method: method,
         cube: externalCube ? externalCube.cube : undefined,
         time_step_years: externalCube ? cubeTimeStep : undefined,
+        temporal_autocorr_correction: tempAutocorrCorr,
       });
       setRes(out);
     } catch (err) {
@@ -139,6 +141,18 @@ export const SpatialFdrPanel: React.FC<SpatialFdrPanelProps> = ({
         )}
 
         <label className="text-[11px] text-silver-300 space-y-1">
+          <span className="block text-silver-500 font-semibold">Temporal Autocorr. Correction</span>
+          <select
+            value={tempAutocorrCorr}
+            onChange={(e) => setTempAutocorrCorr(e.target.value as 'none' | 'hamed_rao')}
+            className="w-full px-2.5 py-1.5 rounded-lg bg-ink-950 border border-ink-700 text-xs text-silver-100"
+          >
+            <option value="none">None (MK Independence)</option>
+            <option value="hamed_rao">Hamed-Rao (1998) Variance</option>
+          </select>
+        </label>
+
+        <label className="text-[11px] text-silver-300 space-y-1">
           <span className="block text-silver-500 font-semibold">Target Alpha (&alpha;)</span>
           <select
             value={alpha}
@@ -177,7 +191,7 @@ export const SpatialFdrPanel: React.FC<SpatialFdrPanelProps> = ({
             <MetricTile
               label="Grid Dimensions"
               value={`${res.dimensions.rows} × ${res.dimensions.cols}`}
-              sub={`${res.summary.total_valid_cells} valid cells · T=${res.dimensions.time_steps}`}
+              sub={`${res.summary.total_valid_pixels} valid pixels · T=${res.dimensions.time_steps}`}
             />
             <MetricTile
               label="Raw MK Significant"

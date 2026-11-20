@@ -80,6 +80,7 @@ def spatial_fdr(payload: SpatialFdrRequest) -> dict:
             n_years=payload.n_years,
             alpha=payload.alpha,
             correction_method=payload.correction_method,
+            temporal_autocorr_correction=payload.temporal_autocorr_correction,
             cube_input=payload.cube,
             seed=payload.seed,
             timestamps=payload.timestamps,

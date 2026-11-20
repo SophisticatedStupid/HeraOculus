@@ -62,26 +62,37 @@ class MeasurementProvenance(TypedDict):
 # ──────────────────────────────────────────────────────────────────
 
 
+def _open_xarray_file(path: str) -> xr.Dataset:
+    """Safely open NetCDF3/NetCDF4/HDF5 file using xarray.
+
+    The dataset is materialized into memory before returning so the temp file
+    can be deleted by the caller afterward.
+    """
+    errors = []
+    for engine in ("netcdf4", "h5netcdf", "scipy"):
+        try:
+            ds = xr.open_dataset(path, engine=engine)
+            ds.load()  # materialize into memory before caller deletes temp file
+            ds.close()
+            return ds
+        except Exception as exc:
+            errors.append(f"{engine}: {exc}")
+    raise ValueError(f"Could not decode {path} as NetCDF/HDF5 ({'; '.join(errors)})")
+
+
 def _open_xarray_bytes(raw_bytes: bytes, filename: str) -> xr.Dataset:
-    """Safely open NetCDF3/NetCDF4/HDF5 bytes using xarray via a temporary file."""
+    """Open NetCDF/HDF5 bytes via a temporary file (backward-compat wrapper)."""
+    import tempfile
+    import os as _os
     suffix = Path(filename).suffix.lower() or ".nc"
     fd, tmp_path = tempfile.mkstemp(suffix=suffix)
     try:
-        with os.fdopen(fd, "wb") as handle:
+        with _os.fdopen(fd, "wb") as handle:
             handle.write(raw_bytes)
-        errors = []
-        for engine in ("netcdf4", "h5netcdf", "scipy"):
-            try:
-                ds = xr.open_dataset(tmp_path, engine=engine)
-                ds.load()  # materialize into memory before deleting temp file
-                ds.close()
-                return ds
-            except Exception as exc:
-                errors.append(f"{engine}: {exc}")
-        raise ValueError(f"Could not decode {filename} as NetCDF/HDF5 ({'; '.join(errors)})")
+        return _open_xarray_file(tmp_path)
     finally:
         try:
-            os.remove(tmp_path)
+            _os.remove(tmp_path)
         except OSError:
             pass
 
@@ -246,9 +257,9 @@ def search_earthdata_granules(
 # ──────────────────────────────────────────────────────────────────
 
 
-def inspect_netcdf_file(raw_bytes: bytes, filename: str) -> dict:
+def inspect_netcdf_file(file_path: str, filename: str) -> dict:
     """Inspect dimensions, coordinates, variables, units & global attributes of an uploaded NetCDF/HDF5 file."""
-    ds = _open_xarray_bytes(raw_bytes, filename)
+    ds = _open_xarray_file(file_path)
     variables = []
     for var_name, da in ds.data_vars.items():
         arr = np.asarray(da.values, dtype=float)
@@ -293,7 +304,7 @@ def inspect_netcdf_file(raw_bytes: bytes, filename: str) -> dict:
 
 
 def extract_netcdf_subset(
-    raw_bytes: bytes,
+    file_path: str,
     filename: str,
     *,
     variable: Optional[str] = None,
@@ -309,7 +320,7 @@ def extract_netcdf_subset(
     Validation ensures required dimensions exist and unsupported configurations
     return clear unavailable status rather than inventing data.
     """
-    ds = _open_xarray_bytes(raw_bytes, filename)
+    ds = _open_xarray_file(file_path)
     if not ds.data_vars:
         raise ValueError("Uploaded NetCDF/HDF5 file contains no data variables.")
 
