@@ -112,7 +112,8 @@ export const CustomDataUploader: React.FC<CustomDataUploaderProps> = ({
 
     try {
       const targetVar = EARTH_VARIABLES.find(v => v.id === selectedVarId) || EARTH_VARIABLES[0];
-      const connector = connectorRegistry.getBestConnector(selectedVarId, lat, lon);
+      const selection = connectorRegistry.getBestConnector(selectedVarId, lat, lon);
+      const connector = selection.connector;
 
       let points: TimeSeriesPoint[] = [];
       let isLiveNasa = false;

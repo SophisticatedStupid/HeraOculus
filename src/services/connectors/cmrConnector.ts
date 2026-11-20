@@ -9,6 +9,7 @@ import type {
   ConnectorFetchResult,
   VariableId,
 } from './types';
+import { globalCoverage } from './types';
 
 const BASE_URL = 'https://cmr.earthdata.nasa.gov/search';
 
@@ -149,6 +150,9 @@ const cmrCapabilities: ConnectorCapabilities = {
   catalogSearch: true,
   pointSubset: false,
   regionSubset: true,
+  coverage: globalCoverage(
+    'Global — NASA CMR metadata catalog across all DAACs. Catalog/metadata search only; produces no time series and supports no variables for time-series selection.'
+  ),
 };
 
 export const cmrConnector: EarthDataConnector = {

@@ -11,7 +11,7 @@ import type {
   ConnectorFetchResult,
   VariableId,
 } from './types';
-import { dayOfYearToMonth } from './types';
+import { dayOfYearToMonth, globalCoverage } from './types';
 import { processTimeSeries } from '../statistics';
 
 const BASE_URL = 'https://modis.ornl.gov/rst/api/v1';
@@ -38,6 +38,9 @@ const modisCapabilities: ConnectorCapabilities = {
   catalogSearch: false,
   pointSubset: true,
   regionSubset: false,
+  coverage: globalCoverage(
+    'Global land surface — ORNL DAAC MODIS MOD13Q1 (250 m), 2000–present. The API accepts any lat/lon; ocean and polar-night cells return fill values / no valid vegetation observations rather than fabricated data.'
+  ),
 };
 
 const SUPPORTED_VARIABLES: VariableId[] = ['ndvi', 'evi'];

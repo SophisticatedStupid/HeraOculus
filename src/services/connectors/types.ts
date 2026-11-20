@@ -54,5 +54,35 @@ export function defaultCapabilities(): import('../../types/earthScience').Connec
     catalogSearch: false,
     pointSubset: false,
     regionSubset: false,
+    coverage: defaultCoverage(),
+  };
+}
+
+/** Conservative default coverage: unknown/unsupported regional coverage.
+ * Connectors must override this with their actual, documented coverage.
+ */
+export function defaultCoverage(): import('../../types/earthScience').GeographicCoverage {
+  return {
+    kind: 'regional',
+    description: 'Coverage not declared; treated as unsupported everywhere until the connector documents its actual service area.',
+    regions: [],
+  };
+}
+
+/** Global coverage descriptor for providers serving data worldwide. */
+export function globalCoverage(description: string): import('../../types/earthScience').GeographicCoverage {
+  return { kind: 'global', description };
+}
+
+/** Regional coverage descriptor for providers limited to a specific area. */
+export function regionalCoverage(
+  description: string,
+  options: { regions?: string[]; maxStationDistanceKm?: number } = {}
+): import('../../types/earthScience').GeographicCoverage {
+  return {
+    kind: 'regional',
+    description,
+    regions: options.regions,
+    maxStationDistanceKm: options.maxStationDistanceKm,
   };
 }

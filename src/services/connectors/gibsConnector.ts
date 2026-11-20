@@ -9,6 +9,7 @@ import type {
   ConnectorFetchResult,
   VariableId,
 } from './types';
+import { globalCoverage } from './types';
 
 const BASE_URL = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best';
 export const GIBS_WMS_URL = 'https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi';
@@ -340,6 +341,9 @@ const gibsCapabilities: ConnectorCapabilities = {
   catalogSearch: false,
   pointSubset: false,
   regionSubset: true,
+  coverage: globalCoverage(
+    'Global — NASA GIBS WMTS/WMS tile overlays worldwide. Map-tile only; produces no time series and supports no variables for time-series selection.'
+  ),
 };
 
 export const gibsConnector: EarthDataConnector = {

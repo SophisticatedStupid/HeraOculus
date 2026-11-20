@@ -203,7 +203,8 @@ export const App: React.FC = () => {
   ) => {
     const queryId = ++liveQueryIdRef.current;
 
-    const connector = connectorRegistry.getBestConnector(variableId, lat, lon);
+    const selection = connectorRegistry.getBestConnector(variableId, lat, lon);
+    const connector = selection.connector;
     const targetVar = EARTH_VARIABLES.find(v => v.id === variableId);
     const initialMsg = connector
       ? `Querying ${connector.name} for ${targetVar?.shortName || variableId}...`
@@ -267,11 +268,12 @@ export const App: React.FC = () => {
 
   // Fetch live connector data on initial load for the default hotspot if supported
   useEffect(() => {
-    const connector = connectorRegistry.getBestConnector(
+    const selection = connectorRegistry.getBestConnector(
       selectedVariable.id,
       selectedRegion.coordinates[0],
       selectedRegion.coordinates[1]
     );
+    const connector = selection.connector;
     if (connector?.capabilities.timeSeries || NASA_POWER_PARAM_MAP[selectedVariable.id]) {
       loadCoordinateData(
         selectedRegion.coordinates[0],
@@ -302,7 +304,8 @@ export const App: React.FC = () => {
       setSelectedVariable(primary);
     }
 
-    const connector = connectorRegistry.getBestConnector(targetVar.id, region.coordinates[0], region.coordinates[1]);
+    const selection = connectorRegistry.getBestConnector(targetVar.id, region.coordinates[0], region.coordinates[1]);
+    const connector = selection.connector;
     if (connector?.capabilities.timeSeries || NASA_POWER_PARAM_MAP[targetVar.id]) {
       loadCoordinateData(region.coordinates[0], region.coordinates[1], targetVar.id);
     }
@@ -532,7 +535,8 @@ export const App: React.FC = () => {
                     setCustomPoints(null);
                     setIsLiveNasa(false);
                     setProvenanceTier('synthetic_demo');
-                    const connector = connectorRegistry.getBestConnector(v.id, selectedRegion.coordinates[0], selectedRegion.coordinates[1]);
+                    const selection = connectorRegistry.getBestConnector(v.id, selectedRegion.coordinates[0], selectedRegion.coordinates[1]);
+                    const connector = selection.connector;
                     if (connector?.capabilities.timeSeries || NASA_POWER_PARAM_MAP[v.id]) {
                       const [lat, lon] = selectedRegion.coordinates;
                       loadCoordinateData(lat, lon, v.id);

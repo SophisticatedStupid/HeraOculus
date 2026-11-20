@@ -10,7 +10,7 @@ import type {
   VariableId,
   StationMetadata,
 } from './types';
-import { haversineDistance } from './types';
+import { haversineDistance, regionalCoverage } from './types';
 import { processTimeSeries } from '../statistics';
 
 const BASE_URL = 'https://waterservices.usgs.gov/nwis';
@@ -96,6 +96,10 @@ const usgsCapabilities: ConnectorCapabilities = {
   catalogSearch: false,
   pointSubset: true,
   regionSubset: false,
+  coverage: regionalCoverage(
+    'Regional — United States only. USGS NWIS streamflow gauges within 500 km of the query point; points farther from any gauged river are explicitly unavailable, never backfilled with a distant US station.',
+    { regions: ['United States'], maxStationDistanceKm: MAX_STATION_DISTANCE_KM }
+  ),
 };
 
 const SUPPORTED_VARIABLES: VariableId[] = ['streamflow'];
@@ -199,6 +203,10 @@ export const usgsConnector: EarthDataConnector = {
 
   supportsVariable(variableId: VariableId): boolean {
     return variableId === 'streamflow';
+  },
+
+  coversPoint(lat: number, lon: number): boolean {
+    return findNearestSite(lat, lon) !== null;
   },
 
   async fetchTimeSeries(options: ConnectorFetchOptions): Promise<ConnectorFetchResult> {

@@ -10,7 +10,7 @@ import type {
   VariableId,
   StationMetadata,
 } from './types';
-import { haversineDistance } from './types';
+import { haversineDistance, regionalCoverage } from './types';
 import { processTimeSeries } from '../statistics';
 
 const BASE_URL = 'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter';
@@ -98,6 +98,10 @@ const noaaCapabilities: ConnectorCapabilities = {
   catalogSearch: false,
   pointSubset: true,
   regionSubset: false,
+  coverage: regionalCoverage(
+    'Regional — U.S. coastal waters only. NOAA CO-OPS tide gauges within 500 km of the query point; points farther from any gauged station are explicitly unavailable, never backfilled with a distant US station.',
+    { regions: ['United States (coastal)'], maxStationDistanceKm: MAX_STATION_DISTANCE_KM }
+  ),
 };
 
 const SUPPORTED_VARIABLES: VariableId[] = ['sea_level'];
@@ -133,6 +137,10 @@ export const noaaConnector: EarthDataConnector = {
 
   supportsVariable(variableId: VariableId): boolean {
     return variableId === 'sea_level';
+  },
+
+  coversPoint(lat: number, lon: number): boolean {
+    return findNearestStation(lat, lon) !== null;
   },
 
   async fetchTimeSeries(options: ConnectorFetchOptions): Promise<ConnectorFetchResult> {

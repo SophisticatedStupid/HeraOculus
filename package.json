@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite --port 3000 --host",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "tsc --noEmit"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.5",
@@ -17,7 +20,8 @@
     "@vitejs/plugin-react": "^6.3.0",
     "tailwindcss": "^4.3.5",
     "typescript": "~7.0.2",
-    "vite": "^8.3.6"
+    "vite": "^8.3.6",
+    "vitest": "^3.2.7"
   },
   "dependencies": {
     "canvas-confetti": "^1.9.4",

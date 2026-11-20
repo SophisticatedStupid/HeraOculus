@@ -10,7 +10,7 @@ import type {
   VariableId,
   TimeSeriesPoint,
 } from './types';
-import { daysInMonth } from './types';
+import { daysInMonth, globalCoverage } from './types';
 import { processTimeSeries } from '../statistics';
 
 // ── Expanded NASA POWER parameter map ─────────────────────────────────
@@ -56,6 +56,9 @@ const powerCapabilities: ConnectorCapabilities = {
   catalogSearch: false,
   pointSubset: true,
   regionSubset: false,
+  coverage: globalCoverage(
+    'Global — NASA POWER MERRA-2 / GLDAS reanalysis on a 0.5°×0.625° grid, 1981–present. Every valid lat/lon is served; polar-night and missing cells return explicit fill values rather than fabricated data.'
+  ),
 };
 
 const SUPPORTED_VARIABLES: VariableId[] = Object.keys(POWER_PARAM_MAP) as VariableId[];

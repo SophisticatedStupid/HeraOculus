@@ -212,6 +212,31 @@ export interface ConnectorCapabilities {
   catalogSearch: boolean;    // Can search metadata/collections
   pointSubset: boolean;      // Can query by lat/lon point
   regionSubset: boolean;     // Can query by bounding box
+  /** Geographic coverage of the connector's data source. */
+  coverage: GeographicCoverage;
+}
+
+/** Kind of geographic coverage a connector claims. */
+export type CoverageKind = 'global' | 'regional';
+
+/**
+ * Declarative geographic coverage metadata for a connector.
+ * Only claim coverage that is supported by the provider's actual documentation
+ * or implementation; never claim global coverage for a regional in-situ network.
+ */
+export interface GeographicCoverage {
+  /** 'global' when the provider serves data worldwide (subject to product masks); 'regional' when limited to a specific area. */
+  kind: CoverageKind;
+  /** Human-readable description of the covered area and any known limitations. */
+  description: string;
+  /** Named regions/countries covered (only meaningful when kind === 'regional'). */
+  regions?: string[];
+  /**
+   * For in-situ regional connectors: maximum great-circle distance (km) from a
+   * station/gauge at which a query point is still considered covered.
+   * Points beyond this distance return an explicit unavailable result.
+   */
+  maxStationDistanceKm?: number;
 }
 
 export interface ConnectorFetchOptions {
@@ -277,6 +302,14 @@ export interface EarthDataConnector {
 
   /** Check if a variable is supported by this connector */
   supportsVariable(variableId: VariableId): boolean;
+
+  /**
+   * Optional point-coverage test. Regional connectors should implement this
+   * (e.g. nearest-station distance check). Global connectors omit it and are
+   * treated as covering every valid coordinate. When omitted for a regional
+   * connector, coverage is conservatively treated as false everywhere.
+   */
+  coversPoint?(lat: number, lon: number): boolean;
 }
 
 // ── Statistical Lab Types ─────────────────────────────────────────────
