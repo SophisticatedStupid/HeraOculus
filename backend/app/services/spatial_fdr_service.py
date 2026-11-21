@@ -19,46 +19,6 @@ from scipy import stats
 from statsmodels.stats.multitest import multipletests
 
 
-def _parse_timestamps_to_decimal_years(timestamps: list[str]) -> np.ndarray:
-    """Convert ISO-like timestamps ('YYYY', 'YYYY-MM', 'YYYY-MM-DD', optional time) to decimal years."""
-    out = []
-    for label in timestamps:
-        text = str(label).strip().replace("Z", "").split("T")[0].split(" ")[0]
-        parts = text.split("-")
-        if not parts or not parts[0]:
-            raise ValueError(f"Unparseable timestamp: {label!r}")
-        try:
-            year = int(parts[0])
-            month = int(parts[1]) if len(parts) > 1 and parts[1] else 1
-            day = int(parts[2]) if len(parts) > 2 and parts[2] else 1
-        except (ValueError, IndexError) as exc:
-            raise ValueError(f"Unparseable timestamp: {label!r}") from exc
-        if not (1 <= month <= 12) or not (1 <= day <= 31):
-            raise ValueError(f"Out-of-range timestamp: {label!r}")
-        year_start = datetime(year, 1, 1)
-        year_end = datetime(year + 1, 1, 1)
-        frac = (datetime(year, month, day) - year_start).total_seconds() / (
-            year_end - year_start
-        ).total_seconds()
-        out.append(year + frac)
-    return np.asarray(out, dtype=float)
-
-
-def _classify_resolution(step_years: float) -> tuple[str, str]:
-    """Return (resolution_label, units_description) for a (median) time step in years."""
-    if not np.isfinite(step_years) or step_years <= 0:
-        return "unknown", "years"
-    if abs(step_years - 1.0) <= 0.02:
-        return "annual", "decimal years (annual steps)"
-    if abs(step_years - 1.0 / 12.0) <= 0.01:
-        return "monthly", "decimal years (monthly steps)"
-    if abs(step_years - 0.25) <= 0.01:
-        return "quarterly", "decimal years (quarterly steps)"
-    if abs(step_years - 0.5) <= 0.01:
-        return "semi-annual", "decimal years (semi-annual steps)"
-    return "irregular/custom", f"decimal years (median step {step_years:.5f} yrs)"
-
-
 def _build_synthetic_climate_cube(
     *,
     center_lat: float,

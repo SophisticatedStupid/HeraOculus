@@ -41,9 +41,6 @@ export const POWER_PARAM_MAP: Partial<Record<VariableId, string>> = {
 /** Parameters that are in mm/day and must be converted to mm/month */
 const MM_DAY_PARAMS = new Set(['PRECTOTCORR', 'EVLAND', 'PRECSNO']);
 
-/** NASA POWER fill value for missing data (polar night, ocean, etc.) */
-const FILL_VALUE = -999.0;
-
 // ── In-memory cache ───────────────────────────────────────────────────
 
 const powerCache = new Map<string, ConnectorFetchResult>();
@@ -157,7 +154,7 @@ export const powerConnector: EarthDataConnector = {
 
         // Preserve -999.0 fill values (polar night, missing data) as explicit null slots
         // so seasonal index alignment (y * 12 + m) remains intact.
-        if (typeof val !== 'number' || !isFinite(val) || val <= FILL_VALUE + 100) {
+        if (typeof val !== 'number' || !isFinite(val) || val <= -900) {
           rawPoints.push({
             date: `${yearStr}-${monthStr}`,
             value: null,

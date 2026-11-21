@@ -536,3 +536,142 @@ export interface GEVResult {
   blockMaxima: number[];
   returnLevels: { period: number; level: number }[];
 }
+
+// ── Raster Interpolation & Gap-Filling Types ──────────────────────────────
+
+export type InterpolationMethod =
+  | 'nearest_neighbor'
+  | 'bilinear'
+  | 'bicubic'
+  | 'local_mean'
+  | 'local_median'
+  | 'idw'
+  | 'ordinary_kriging'
+  | 'temporal_linear'
+  | 'temporal_nearest_date'
+  | 'temporal_forward_fill'
+  | 'temporal_backward_fill'
+  | 'temporal_local_mean';
+
+export type InterpolationRasterType = 'continuous' | 'categorical' | 'temporal' | 'unknown';
+
+export type ProvenanceClass = 'observed' | 'interpolated' | 'nodata' | 'excluded';
+
+export type ValidationStrategy = 'random_holdout' | 'spatial_block';
+
+export interface MissingRegionStat {
+  id: number;
+  pixel_count: number;
+  area_map_units: number;
+  bbox: [number, number, number, number];
+  centroid: [number, number];
+  is_edge: boolean;
+  surrounded_by_valid: boolean;
+  min_distance_to_valid: number;
+  mean_distance_to_valid: number;
+}
+
+export interface RasterInspectionResult {
+  width: number;
+  height: number;
+  bands: number;
+  crs: string | null;
+  transform: Record<string, number> | null;
+  pixel_size_x: number | null;
+  pixel_size_y: number | null;
+  extent: [number, number, number, number] | null;
+  data_type: string;
+  nodata_value: number | null;
+  has_alpha_band: boolean;
+  band_index: number;
+  valid_pixel_count: number;
+  missing_pixel_count: number;
+  missing_percentage: number;
+  valid_percentage: number;
+  band_stats: Array<{
+    band: number;
+    min: number | null;
+    max: number | null;
+    mean: number | null;
+    std: number | null;
+    valid_count: number;
+    missing_count: number;
+  }>;
+  raster_type: InterpolationRasterType;
+  missing_region_count: number;
+  missing_region_stats: MissingRegionStat[];
+  largest_missing_region_pixels: number;
+  average_missing_region_size: number;
+  missing_region_size_distribution: Record<string, number>;
+  isolated_missing_pixels: number;
+  edge_gaps: number;
+  interior_gaps: number;
+  distance_to_valid_stats: Record<string, number | null>;
+  missing_spatial_distribution: Record<string, number>;
+  processing_duration_ms: number;
+  inspected_at: string;
+}
+
+export interface InterpolationResult {
+  method: string;
+  band_index: number;
+  raster_type: string;
+  config: Record<string, any>;
+  observed_pixel_count: number;
+  interpolated_pixel_count: number;
+  remaining_nodata_count: number;
+  excluded_pixel_count: number;
+  processing_duration_ms: number;
+  provenance_mask: string[][];
+  reconstructed: Array<(number | null)[]>;
+  quality_mask: Array<(number | null)[]> | null;
+  distance_to_observation: Array<(number | null)[]> | null;
+  kriging_variance: Array<(number | null)[]> | null;
+  variogram_fit: Record<string, any> | null;
+  extrapolated_pixels?: Array<Record<string, any>>;
+}
+
+export interface ValidationResult {
+  method: string;
+  config: Record<string, any>;
+  validation_strategy: ValidationStrategy;
+  validation_sample_count: number;
+  n_excluded_from_validation: number;
+  mae: number | null;
+  rmse: number | null;
+  bias: number | null;
+  median_absolute_error: number | null;
+  mape: number | null;
+  r_squared: number | null;
+  reconstruction_percentage: number;
+  remaining_nodata_percentage: number;
+  excluded_percentage: number;
+  processing_duration_ms: number;
+  warnings: string[];
+  limitations: string[];
+  validation_predicted: number[];
+  validation_observed: number[];
+  validation_residuals: number[];
+  validation_coords: number[][];
+}
+
+export interface CompatibleMethod {
+  id: string;
+  label: string;
+  description: string;
+  compatible: boolean;
+  supported_raster_types: string[];
+  supports_max_distance: boolean;
+  supports_categorical: boolean;
+  default_config: Record<string, any>;
+}
+
+export type InterpolationStage =
+  | 'select_dataset'
+  | 'inspect_missing'
+  | 'choose_method'
+  | 'configure'
+  | 'validate'
+  | 'execute'
+  | 'compare_results'
+  | 'export';

@@ -213,3 +213,246 @@ class AsfSearchRequest(BaseModel):
     start_date: str = "2024-01-01T00:00:00Z"
     end_date: str = "2025-12-31T23:59:59Z"
     max_results: int = Field(default=12, ge=1, le=30)
+
+
+# ---------------------------------------------------------------------------
+# Raster Interpolation & Gap-Filling Schemas
+# ---------------------------------------------------------------------------
+
+class RasterInspectRequest(BaseModel):
+    """Request to inspect a raster for NoData and missing-data diagnostics."""
+    band_index: int = Field(default=1, ge=1, description="1-based band index to inspect.")
+    user_confirmed_type: Optional[Literal["continuous", "categorical", "temporal", "unknown"]] = Field(
+        default=None,
+        description="User-confirmed raster semantics. If omitted, inferred from dtype.",
+    )
+
+
+class RasterInspectResponse(BaseModel):
+    width: int
+    height: int
+    bands: int
+    crs: Optional[str] = None
+    transform: Optional[dict] = None
+    pixel_size_x: Optional[float] = None
+    pixel_size_y: Optional[float] = None
+    extent: Optional[tuple[float, float, float, float]] = None
+    data_type: str
+    nodata_value: Optional[float] = None
+    has_alpha_band: bool = False
+    band_index: int
+
+    valid_pixel_count: int
+    missing_pixel_count: int
+    missing_percentage: float
+    valid_percentage: float
+
+    band_stats: list[dict]
+
+    raster_type: str
+
+    missing_region_count: int
+    missing_region_stats: list[dict]
+    largest_missing_region_pixels: int
+    average_missing_region_size: float
+    missing_region_size_distribution: dict
+    isolated_missing_pixels: int
+    edge_gaps: int
+    interior_gaps: int
+
+    distance_to_valid_stats: dict
+    missing_spatial_distribution: dict
+
+    processing_duration_ms: float
+    inspected_at: str
+
+
+class InterpolateRequest(BaseModel):
+    """Request to interpolate missing values in a raster band."""
+    data: Any = Field(
+        description="Raster array as nested lists (2D for spatial, 3D (T,H,W) for temporal). null = NoData."
+    )
+    method: Literal[
+        "nearest_neighbor", "bilinear", "bicubic", "local_mean",
+        "local_median", "idw", "ordinary_kriging",
+        "temporal_linear", "temporal_nearest_date",
+        "temporal_forward_fill", "temporal_backward_fill",
+        "temporal_local_mean",
+    ] = "nearest_neighbor"
+
+    band_index: int = Field(default=1, ge=1)
+    raster_type: Literal["continuous", "categorical", "temporal", "unknown"] = "continuous"
+
+    # Spatial parameters
+    max_distance_pixels: Optional[float] = Field(
+        default=None, ge=0, description="Maximum search radius in pixels."
+    )
+    geographic_crs: bool = Field(default=False)
+    pixel_size_x: Optional[float] = Field(default=None, gt=0)
+    pixel_size_y: Optional[float] = Field(default=None, gt=0)
+
+    # Nearest neighbor
+    # (uses max_distance_pixels)
+
+    # Bilinear / bicubic
+    neighborhood: Optional[Literal["3x3", "5x5", "4x4", "6x6"]] = None
+    edge_handling: Optional[Literal["clamp", "nearest_valid", "nodata"]] = None
+    clip_to_observed_range: Optional[bool] = None
+
+    # Local mean / median
+    window_size: Optional[int] = Field(default=None, ge=3, le=21)
+    min_valid_neighbors: Optional[int] = Field(default=None, ge=1, le=20)
+    neighborhood_shape: Optional[Literal["square", "circle"]] = None
+
+    # IDW
+    power: Optional[float] = Field(default=None, gt=0, le=10)
+    search_radius_pixels: Optional[float] = Field(default=None, ge=0)
+    max_neighbors: Optional[int] = Field(default=None, ge=1, le=50)
+    min_neighbors: Optional[int] = Field(default=None, ge=1, le=20)
+
+    # Ordinary kriging
+    variogram_model: Optional[Literal["spherical", "exponential", "gaussian", "linear"]] = None
+    variogram_nugget: Optional[float] = Field(default=None, ge=0)
+    variogram_sill: Optional[float] = Field(default=None, gt=0)
+    variogram_range: Optional[float] = Field(default=None, gt=0)
+
+    # Temporal
+    max_gap_steps: Optional[int] = Field(default=None, ge=1)
+    allow_extrapolation: bool = Field(default=False)
+
+    # Temporal cube data (for temporal methods)
+    times: Optional[list[float]] = Field(
+        default=None,
+        description="Decimal-year time coordinates for temporal interpolation (length = T)."
+    )
+
+
+class InterpolateResponse(BaseModel):
+    method: str
+    band_index: int
+    raster_type: str
+    config: dict
+
+    observed_pixel_count: int
+    interpolated_pixel_count: int
+    remaining_nodata_count: int
+    excluded_pixel_count: int
+    processing_duration_ms: float
+
+    # Provenance mask as nested list of strings
+    provenance_mask: list[list[str]]
+
+    # Reconstructed array as nested list (NaN -> null)
+    reconstructed: list[list[Optional[float]]]
+
+    # Quality raster (optional)
+    quality_mask: Optional[list[list[Optional[float]]]] = None
+
+    # Distance to observation (IDW/NN diagnostic)
+    distance_to_observation: Optional[list[list[Optional[float]]]] = None
+
+    # Kriging variance (kriging only)
+    kriging_variance: Optional[list[list[Optional[float]]]] = None
+
+    # Variogram fit info (kriging only)
+    variogram_fit: Optional[dict] = None
+
+
+class ValidateRequest(BaseModel):
+    """Request to cross-validate an interpolation method."""
+    data: list[list[Optional[float]]] = Field(
+        description="2D raster array as nested lists (null = NoData)."
+    )
+    method: Literal[
+        "nearest_neighbor", "bilinear", "bicubic", "local_mean",
+        "local_median", "idw", "ordinary_kriging",
+    ] = "nearest_neighbor"
+
+    band_index: int = Field(default=1, ge=1)
+    raster_type: Literal["continuous", "categorical", "temporal", "unknown"] = "continuous"
+
+    validation_strategy: Literal["random_holdout", "spatial_block"] = "spatial_block"
+    sample_fraction: float = Field(default=0.1, ge=0.01, le=0.5)
+    n_blocks: int = Field(default=4, ge=2, le=16)
+    block_index: Optional[int] = Field(default=None, ge=0)
+    seed: int = Field(default=42)
+
+    max_distance_pixels: Optional[float] = Field(default=None, ge=0)
+    geographic_crs: bool = Field(default=False)
+    pixel_size_x: Optional[float] = Field(default=None, gt=0)
+    pixel_size_y: Optional[float] = Field(default=None, gt=0)
+
+    # Method-specific parameters (same as InterpolateRequest)
+    neighborhood: Optional[Literal["3x3", "5x5", "4x4", "6x6"]] = None
+    edge_handling: Optional[Literal["clamp", "nearest_valid", "nodata"]] = None
+    clip_to_observed_range: Optional[bool] = None
+    window_size: Optional[int] = Field(default=None, ge=3, le=21)
+    min_valid_neighbors: Optional[int] = Field(default=None, ge=1, le=20)
+    neighborhood_shape: Optional[Literal["square", "circle"]] = None
+    power: Optional[float] = Field(default=None, gt=0, le=10)
+    search_radius_pixels: Optional[float] = Field(default=None, ge=0)
+    max_neighbors: Optional[int] = Field(default=None, ge=1, le=50)
+    min_neighbors: Optional[int] = Field(default=None, ge=1, le=20)
+    variogram_model: Optional[Literal["spherical", "exponential", "gaussian", "linear"]] = None
+    variogram_nugget: Optional[float] = Field(default=None, ge=0)
+    variogram_sill: Optional[float] = Field(default=None, gt=0)
+    variogram_range: Optional[float] = Field(default=None, gt=0)
+
+
+class ValidateResponse(BaseModel):
+    method: str
+    config: dict
+    validation_strategy: str
+    validation_sample_count: int
+    n_excluded_from_validation: int
+
+    mae: Optional[float] = None
+    rmse: Optional[float] = None
+    bias: Optional[float] = None
+    median_absolute_error: Optional[float] = None
+    mape: Optional[float] = None
+    r_squared: Optional[float] = None
+
+    reconstruction_percentage: float
+    remaining_nodata_percentage: float
+    excluded_percentage: float
+
+    processing_duration_ms: float
+    warnings: list[str]
+    limitations: list[str]
+
+    validation_predicted: list[float]
+    validation_observed: list[float]
+    validation_residuals: list[float]
+    validation_coords: list[list[int]]
+
+
+class CompatibleMethodsResponse(BaseModel):
+    raster_type: str
+    methods: list[dict]
+
+
+class ExportRequest(BaseModel):
+    """Request to export reconstructed raster as GeoTIFF."""
+    output_filename: str = Field(default="reconstructed.tif", min_length=1, max_length=255)
+    nodata: float = Field(default=-9999.0)
+    include_provenance_band: bool = True
+    include_quality_band: bool = True
+
+    # Raster data (sent from frontend after interpolation)
+    reconstructed_array: list[list[Optional[float]]] = Field(
+        description="Reconstructed 2D array as nested lists (null = NoData)."
+    )
+    provenance_mask: list[list[str]] = Field(
+        description="Provenance class per pixel ('observed'|'interpolated'|'nodata'|'excluded')."
+    )
+    quality_mask: Optional[list[list[Optional[float]]]] = Field(
+        default=None,
+        description="Quality score per pixel (0-1, null = no quality data)."
+    )
+    crs: Optional[str] = Field(default=None, description="Coordinate reference system.")
+    transform: Optional[dict] = Field(
+        default=None,
+        description="Affine transform as dict with keys a,b,c,d,e,f."
+    )
+    method: str = Field(default="unknown", description="Interpolation method used.")

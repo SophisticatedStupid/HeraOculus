@@ -39,6 +39,9 @@ const StatisticalLab = React.lazy(() => import('./components/StatisticalLab/Stat
 const Phase2Lab = React.lazy(() =>
   import('./components/Phase2Lab/Phase2Lab').then((m) => ({ default: m.Phase2Lab }))
 );
+const InterpolationLab = React.lazy(() =>
+  import('./components/InterpolationLab').then((m) => ({ default: m.InterpolationLab }))
+);
 import { 
   Sparkles, 
   Globe2, 
@@ -717,6 +720,13 @@ export const App: React.FC = () => {
                 onClearHandoff={() => setPhase2Handoff(null)}
               />
             </React.Suspense>
+          </div>
+        )}
+
+        {/* MODE 8: RASTER INTERPOLATION LAB */}
+        {currentMode === 'interpolation' && (
+          <div>
+            <InterpolationLab onClose={() => setCurrentMode('explorer')} />
           </div>
         )}
 

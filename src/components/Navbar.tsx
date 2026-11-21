@@ -8,6 +8,7 @@ import {
   FileText,
   FlaskConical,
   Cpu,
+  Layout,
   Loader2,
   Satellite,
   RefreshCw,
@@ -17,7 +18,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
-export type AppMode = 'explorer' | 'detective' | 'contrast' | 'encyclopedia' | 'upload' | 'lab' | 'phase2';
+export type AppMode = 'explorer' | 'detective' | 'contrast' | 'encyclopedia' | 'upload' | 'lab' | 'phase2' | 'interpolation';
 export type DataFeedSource = 'live' | 'calibrated' | 'csv' | 'satellite' | 'reanalysis';
 
 const DATA_FEED_META: Record<
@@ -78,6 +79,7 @@ const navItems: { mode: AppMode; label: string; Icon: LucideIcon }[] = [
   { mode: 'upload', label: 'Custom data', Icon: UploadCloud },
   { mode: 'lab', label: 'Statistical lab', Icon: FlaskConical },
   { mode: 'phase2', label: 'Earth compute lab', Icon: Cpu },
+  { mode: 'interpolation', label: 'Raster Interpolation', Icon: Layout },
 ];
 
 function IrisLogo() {
