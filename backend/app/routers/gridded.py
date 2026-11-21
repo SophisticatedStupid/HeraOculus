@@ -15,6 +15,8 @@ Datasets
 * ``era5-land``— ERA5-Land (Copernicus CDS / ARCO Zarr mirror), CDS key, 0.1°
 * ``smap``     — SMAP L4 SPL4SMGP V008 (NSIDC / Earthdata Cloud), NASA
                  Earthdata login, 9 km EASE-Grid 2.0, m³/m³
+* ``modis-lst-night`` — MODIS/Terra MOD11A1 V061 (LAADS), NASA Earthdata
+                        login, 1 km, Kelvin (LST_Night_1km)
 
 Missing credentials or an out-of-coverage query yield an explicit
 ``status: "unavailable"`` response — never synthetic data.
@@ -33,6 +35,7 @@ from ..services.gridded_climate_service import (
     fetch_chirps_monthly,
     fetch_era5_land_monthly,
     fetch_imerg_monthly,
+    fetch_lst_night_monthly,
     fetch_smap_monthly,
 )
 
@@ -67,12 +70,12 @@ def gridded_series(
     payload: GriddedSeriesRequest = ...,
 ) -> GriddedSeriesResponse:
     """Return a normalized monthly precipitation series."""
-    if dataset not in ("chirps", "imerg", "era5-land", "smap"):
+    if dataset not in ("chirps", "imerg", "era5-land", "smap", "modis-lst-night"):
         raise HTTPException(
             status_code=400,
             detail=(
                 f"Unknown dataset '{dataset}'. "
-                f"Allowed: {', '.join(['chirps', 'imerg', 'era5-land', 'smap'])}."
+                f"Allowed: {', '.join(['chirps', 'imerg', 'era5-land', 'smap', 'modis-lst-night'])}."
             ),
         )
 
@@ -207,6 +210,38 @@ def gridded_series(
             status="available",
             message=(
                 f"Retrieved {series.valid_count} valid month(s) of SMAP L4 "
+                f"({series.missing_count} missing) for {payload.start_date}.."
+                f"{payload.end_date}."
+            ),
+            series=series.to_dict(),
+        )
+    if dataset == "modis-lst-night":
+        _require_credentials(
+            auth_store.has_earthdata_auth(), "modis-lst-night", "NASA Earthdata"
+        )
+        try:
+            series = fetch_lst_night_monthly(
+                lat=payload.lat,
+                lon=payload.lon,
+                start_year=sy,
+                start_month=sm,
+                end_year=ey,
+                end_month=em,
+                area_mean=payload.area_mean,
+                bbox=tuple(payload.bbox) if payload.bbox else None,
+            )
+        except GriddedUnavailable as exc:
+            return GriddedSeriesResponse(
+                status="unavailable",
+                message=str(exc),
+                series=None,
+            )
+        except GriddedUpstreamError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        return GriddedSeriesResponse(
+            status="available",
+            message=(
+                f"Retrieved {series.valid_count} valid month(s) of MODIS LST "
                 f"({series.missing_count} missing) for {payload.start_date}.."
                 f"{payload.end_date}."
             ),

@@ -857,4 +857,223 @@ def test_gridded_smap_unknown_variable_400(monkeypatch) -> None:
     assert resp.status_code == 400
 
 
+# ── MODIS LST Night service-level tests ─────────────────────────────────────
+
+_MODIS_TEST_LST = np.array(
+    [[300.0, 301.0], [302.0, 303.0], [304.0, 305.0]], dtype=np.float64
+)
+
+
+def _patch_modis_download(
+    monkeypatch: pytest.MonkeyPatch, data: bytes = b"fake-hdf"
+) -> None:
+    monkeypatch.setattr(gcs, "_fetch_modis_hdf", lambda url: data)
+
+
+def _patch_modis_read(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(gcs, "_read_modis_lst_night", lambda d: _MODIS_TEST_LST)
+
+
+def _patch_modis_urls(
+    monkeypatch: pytest.MonkeyPatch, urls: list[tuple[str, str]]
+) -> None:
+    monkeypatch.setattr(
+        gcs, "_modis_daily_granule_urls", lambda y, m, h, v: urls
+    )
+
+
+def test_modis_tile_indices() -> None:
+    # lat=0, lon=0 -> h18, v09
+    h, v = gcs._modis_tile_indices(0.0, 0.0)
+    assert h == "h18"
+    assert v == "v09"
+    # lat=90, lon=180 -> h35, v00
+    h, v = gcs._modis_tile_indices(90.0, 180.0)
+    assert h == "h35"
+    assert v == "v00"
+    # lat=-90, lon=-180 -> h00, v17
+    h, v = gcs._modis_tile_indices(-90.0, -180.0)
+    assert h == "h00"
+    assert v == "v17"
+
+
+def test_modis_cell_value() -> None:
+    assert gcs._modis_cell_value(_MODIS_TEST_LST, 0, 0) == 300.0
+    arr_nan = _MODIS_TEST_LST.copy()
+    arr_nan[0, 0] = np.nan
+    assert gcs._modis_cell_value(arr_nan, 0, 0) is None
+
+
+def test_modis_area_mean_matches_hand_computed() -> None:
+    # Mean of all six valid cells: (300+301+302+303+304+305)/6 = 302.5
+    val = gcs._modis_area_mean(_MODIS_TEST_LST, -180.0, -90.0, 180.0, 90.0)
+    assert val is not None
+    assert abs(val - 302.5) < 1e-6, f"expected 302.5, got {val}"
+
+
+def test_modis_area_mean_all_nan_is_none() -> None:
+    all_nan = np.full((3, 2), np.nan, dtype=np.float64)
+    assert (
+        gcs._modis_area_mean(all_nan, -180.0, -90.0, 180.0, 90.0) is None
+    )
+
+
+def test_fetch_lst_night_monthly_point_extraction(monkeypatch) -> None:
+    urls = [
+        (
+            "2024-06-01",
+            "https://ladsweb.modaps.eosdis.nasa.gov/archive/allData/61/MOD11A1/2024/153/MOD11A1.A2024153.h18v09.061.2024153120000.hdf",
+        )
+    ]
+    _patch_modis_urls(monkeypatch, urls)
+    _patch_modis_download(monkeypatch)
+    _patch_modis_read(monkeypatch)
+    monkeypatch.setattr(gcs, "_modis_earthdata_credentials", lambda: ("user", "pass"))
+
+    # lat=0, lon=0 -> h18v09, nearest cell (0,0) = 300.0 K
+    series = gcs.fetch_lst_night_monthly(
+        lat=0.0,
+        lon=0.0,
+        start_year=2024,
+        start_month=6,
+        end_year=2024,
+        end_month=6,
+    )
+    assert series.dates == ["2024-06"]
+    assert abs(series.values[0] - 300.0) < 1e-6
+    assert series.units == "K"
+    assert series.dataset == "MODIS MOD11A1"
+    assert series.provenance == "satellite_observation"
+    assert series.valid_count == 1
+
+
+def test_fetch_lst_night_monthly_area_mean(monkeypatch) -> None:
+    urls = [
+        (
+            "2024-06-01",
+            "https://ladsweb.modaps.eosdis.nasa.gov/archive/allData/61/MOD11A1/2024/153/MOD11A1.A2024153.h18v09.061.2024153120000.hdf",
+        )
+    ]
+    _patch_modis_urls(monkeypatch, urls)
+    _patch_modis_download(monkeypatch)
+    _patch_modis_read(monkeypatch)
+    monkeypatch.setattr(gcs, "_modis_earthdata_credentials", lambda: ("user", "pass"))
+
+    series = gcs.fetch_lst_night_monthly(
+        lat=0.0,
+        lon=0.0,
+        start_year=2024,
+        start_month=6,
+        end_year=2024,
+        end_month=6,
+        area_mean=True,
+        bbox=[-180.0, -90.0, 180.0, 90.0],
+    )
+    assert abs(series.values[0] - 302.5) < 1e-6
+
+
+def test_fetch_lst_night_monthly_out_of_coverage() -> None:
+    # MODIS covers -90..90 lat; 100 is outside.
+    with pytest.raises(GriddedUnavailable):
+        gcs.fetch_lst_night_monthly(
+            lat=100.0,
+            lon=0.0,
+            start_year=2024,
+            start_month=1,
+            end_year=2024,
+            end_month=1,
+        )
+
+
+def test_fetch_lst_night_monthly_missing_credentials(monkeypatch) -> None:
+    monkeypatch.setattr(gcs, "_modis_earthdata_credentials", lambda: None)
+    with pytest.raises(GriddedUnavailable):
+        gcs.fetch_lst_night_monthly(
+            lat=0.0,
+            lon=0.0,
+            start_year=2024,
+            start_month=1,
+            end_year=2024,
+            end_month=1,
+        )
+
+
+def test_fetch_lst_night_monthly_cache_hit_avoids_redownload(monkeypatch) -> None:
+    monkeypatch.setattr(gcs, "_modis_earthdata_credentials", lambda: ("user", "pass"))
+    granule_url = (
+        "https://ladsweb.modaps.eosdis.nasa.gov/archive/allData/61/MOD11A1/2024/153/"
+        "MOD11A1.A2024153.h18v09.061.2024153120000.hdf"
+    )
+    gcs._cache_set(
+        "modis_lst_night", f"modis_lst_night_{granule_url}", b"cached-hdf"
+    )
+    monkeypatch.setattr(
+        gcs.requests, "get", lambda *a, **k: (_ for _ in ()).throw(AssertionError("live HTTP attempted"))
+    )
+    _patch_modis_urls(monkeypatch, [("2024-06-01", granule_url)])
+    _patch_modis_read(monkeypatch)
+    series = gcs.fetch_lst_night_monthly(
+        lat=0.0,
+        lon=0.0,
+        start_year=2024,
+        start_month=6,
+        end_year=2024,
+        end_month=6,
+    )
+    assert abs(series.values[0] - 300.0) < 1e-6
+
+
+# ── MODIS LST Night router-level tests ──────────────────────────────────────
+
+def test_gridded_modis_lst_night_missing_credentials_400(monkeypatch) -> None:
+    monkeypatch.setattr(gcs.auth_store, "has_earthdata_auth", lambda: False)
+    monkeypatch.setattr(gcs.auth_store, "get_earthdata_token", lambda: None)
+    monkeypatch.setattr(
+        gcs.auth_store, "get_earthdata_credentials", lambda: (None, None)
+    )
+    resp = _post_gridded(
+        "modis-lst-night",
+        {
+            "variable": "precip",
+            "start_date": "2024-06",
+            "end_date": "2024-06",
+            "lat": 0.0,
+            "lon": 0.0,
+        },
+    )
+    assert resp.status_code == 400
+    assert "Earthdata" in resp.json()["detail"]
+
+
+def test_gridded_modis_lst_night_available(monkeypatch) -> None:
+    monkeypatch.setattr(gcs.auth_store, "has_earthdata_auth", lambda: True)
+    monkeypatch.setattr(
+        gcs.auth_store, "get_earthdata_credentials", lambda: ("user", "pass")
+    )
+    urls = [
+        (
+            "2024-06-01",
+            "https://ladsweb.modaps.eosdis.nasa.gov/archive/allData/61/MOD11A1/2024/153/MOD11A1.A2024153.h18v09.061.2024153120000.hdf",
+        )
+    ]
+    _patch_modis_urls(monkeypatch, urls)
+    _patch_modis_download(monkeypatch)
+    _patch_modis_read(monkeypatch)
+    resp = _post_gridded(
+        "modis-lst-night",
+        {
+            "variable": "precip",
+            "start_date": "2024-06",
+            "end_date": "2024-06",
+            "lat": 0.0,
+            "lon": 0.0,
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "available"
+    assert abs(body["series"]["values"][0] - 300.0) < 1e-6
+    assert body["series"]["units"] == "K"
+
+
 

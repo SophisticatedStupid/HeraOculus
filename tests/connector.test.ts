@@ -25,6 +25,7 @@ import { stacConnector } from '../src/services/connectors/stacConnector';
 import { chirpsConnector } from '../src/services/connectors/chirpsConnector';
 import { imergConnector } from '../src/services/connectors/imergConnector';
 import { era5LandConnector } from '../src/services/connectors/era5LandConnector';
+import { modisLstConnector } from '../src/services/connectors/modisLstConnector';
 import { smapConnector } from '../src/services/connectors/smapConnector';
 import { describe, expect, it } from 'vitest';
 
@@ -57,9 +58,9 @@ function findCandidate(
 }
 
 describe('connector registry', () => {
-  it('registers all eleven connectors', () => {
+  it('registers all twelve connectors', () => {
     const ids = connectorRegistry.getAll().map(c => c.id).sort();
-    expect(ids).toHaveLength(11);
+    expect(ids).toHaveLength(12);
     expect(ids).toContain('nasa-power');
     expect(ids).toContain('ornl-modis');
     expect(ids).toContain('usgs-water');
@@ -71,6 +72,7 @@ describe('connector registry', () => {
     expect(ids).toContain('imerg');
     expect(ids).toContain('era5-land');
     expect(ids).toContain('smap');
+    expect(ids).toContain('modis-lst-night');
   });
 
   it('distinguishes global vs regional coverage', () => {
@@ -88,6 +90,7 @@ describe('connector registry', () => {
     expect(byId.get('imerg')!.capabilities.coverage.kind).toBe('global');
     expect(byId.get('era5-land')!.capabilities.coverage.kind).toBe('regional');
     expect(byId.get('smap')!.capabilities.coverage.kind).toBe('regional');
+    expect(byId.get('modis-lst-night')!.capabilities.coverage.kind).toBe('global');
   });
 });
 
@@ -336,5 +339,24 @@ describe('gridded connectors — coverage selection & provenance labelling', () 
     expect(rejected?.supportsVariable).toBe(true);
     expect(rejected?.coversLocation).toBe(false);
     expect(rejected?.reason).toContain('outside its service area');
+  });
+
+  it('MODIS LST Night is global and satellite_observation', () => {
+    const c = byId.get('modis-lst-night')!;
+    expect(c.provenanceType).toBe('satellite_observation');
+    expect(c.capabilities.coverage.kind).toBe('global');
+    expect(c.coversPoint?.(-33.0, -70.0)).toBe(true); // Southern Hemisphere
+    expect(c.coversPoint?.(82.0, -50.0)).toBe(true);  // Arctic
+
+    const sel = connectorRegistry.getBestConnector('lst_night', 82.0, -50.0);
+    expect(sel.fallback).toBe(false);
+    expect(selectedId(sel)).toBe('modis-lst-night');
+  });
+
+  it('modis-lst-night supports only lst_night', () => {
+    const c = byId.get('modis-lst-night')!;
+    expect(c.supportsVariable('lst_night')).toBe(true);
+    expect(c.supportsVariable('precip')).toBe(false);
+    expect(c.supportsVariable('temp_air')).toBe(false);
   });
 });

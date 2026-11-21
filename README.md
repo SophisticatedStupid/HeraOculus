@@ -241,6 +241,9 @@ npm run build         # tsc && vite build
 | `EARTHDATA_TOKEN` | *(unset)* | NASA Earthdata auth token (optional) |
 | `EARTHDATA_USERNAME` | *(unset)* | NASA Earthdata username (optional) |
 | `EARTHDATA_PASSWORD` | *(unset)* | NASA Earthdata password (optional) |
+| `CDS_API_KEY` | *(unset)* | Copernicus CDS API key for ERA5-Land (optional) |
+| `CDSAPI_KEY` | *(unset)* | Alternate Copernicus CDS API key name (optional) |
+| `DESTINE_PAT` | *(unset)* | DestinE Earth Data Hub PAT for ERA5-Land ARCO Zarr (optional) |
 | `VITE_BACKEND_URL` | `http://localhost:8000` | Frontend backend URL (Vite env, prefix `VITE_`) |
 
 Edit `.env` (backend) for server-side variables. `VITE_BACKEND_URL` is a Vite frontend variable and must be prefixed with `VITE_` in `.env`.
@@ -253,6 +256,8 @@ Edit `.env` (backend) for server-side variables. `VITE_BACKEND_URL` is a Vite fr
 - **CHIRPS v3** covers 60°S–60°N (land); queries outside that band return an explicit unavailable result, never synthetic data.
 - **GPM IMERG Final** requires NASA Earthdata Login credentials on the backend; without them it returns an explicit unavailable result. V07 Final ran through 2025-09 (~3.5–4 month latency).
 - **ERA5-Land** requires a CDS API key or DestinE PAT on the backend; without them it returns an explicit unavailable result. CDS access is queue-throttled; prefer the ARCO Zarr mirror.
+- **SMAP L4 (SPL4SMGP V008)** root-zone/surface soil moisture requires NASA Earthdata Login credentials on the backend; without them it returns an explicit unavailable result. Root-zone SM is a GEOS land-model estimate assimilating SMAP brightness temperatures (~7-day L4 latency), not a direct observation. Covers global land 85°S–85°N.
+- **MODIS LST Night (MOD11A1 V061)** requires NASA Earthdata Login credentials on the backend; without them it returns an explicit unavailable result. Stored as scaled integers (K = raw × 0.02, fill 0, valid range 7500–65535); clear-sky only, ~5-day latency. Covers global 90°S–90°N.
 - **CMR** is metadata/catalog search only; it produces no time series.
 - **GIBS** is map-tile visualization only; it produces no time series.
 - **Extreme value analysis** requires explicit dates and observation frequency; without dates, frequency is flagged as unknown and return-period assumptions are not silently inferred.

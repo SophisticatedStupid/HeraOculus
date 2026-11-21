@@ -6,6 +6,7 @@ export type VariableId =
   | 'evapo'
   | 'aod'
   | 'lst_day'
+  | 'lst_night'
   | 'ozone'
   // Phase 1 expanded variables
   | 'pressure'

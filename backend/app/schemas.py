@@ -611,7 +611,7 @@ def _parse_iso_datetime(value: str) -> datetime:
 # Gridded climate / reanalysis rainfall schemas
 # ---------------------------------------------------------------------------
 
-GRIDDED_ALLOWED_DATASETS: list[str] = ["chirps", "imerg", "era5-land", "smap"]
+GRIDDED_ALLOWED_DATASETS: list[str] = ["chirps", "imerg", "era5-land", "smap", "modis-lst-night"]
 GRIDDED_ALLOWED_VARIABLES: list[str] = ["precip"]
 GRIDDED_MAX_BBOX_AREA_SQ_DEG = 100.0
 GRIDDED_MAX_DATE_SPAN_MONTHS = 40 * 12

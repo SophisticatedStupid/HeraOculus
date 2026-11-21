@@ -20,6 +20,7 @@ import { gibsConnector } from '../src/services/connectors/gibsConnector';
 import { chirpsConnector } from '../src/services/connectors/chirpsConnector';
 import { imergConnector } from '../src/services/connectors/imergConnector';
 import { era5LandConnector } from '../src/services/connectors/era5LandConnector';
+import { modisLstConnector } from '../src/services/connectors/modisLstConnector';
 import { smapConnector } from '../src/services/connectors/smapConnector';
 import { analyzeTrendSafe } from '../src/services/statistics';
 import type { TimeSeriesPoint } from '../src/types/earthScience';
@@ -37,6 +38,7 @@ describe('connector provenance metadata', () => {
     expect(imergConnector.provenanceType).toBe('satellite_observation');
     expect(era5LandConnector.provenanceType).toBe('reanalysis_model');
     expect(smapConnector.provenanceType).toBe('satellite_observation');
+    expect(modisLstConnector.provenanceType).toBe('satellite_observation');
   });
 
   it('selected connector provenance matches the variable\'s expected source', () => {
@@ -47,6 +49,7 @@ describe('connector provenance metadata', () => {
       ['evi', 22.0, 78.0, 'satellite_observation'],
       ['streamflow', 38.9, -77.1, 'in_situ_gauge'],
       ['sea_level', 40.7, -74.0, 'in_situ_gauge'],
+      ['lst_night', 0.0, 0.0, 'satellite_observation'],
     ];
     for (const [v, la, lo, expectedProvenance] of cases) {
       const sel = connectorRegistry.getBestConnector(v, la, lo);

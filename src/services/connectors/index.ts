@@ -12,6 +12,7 @@ import { stacConnector } from './stacConnector';
 import { chirpsConnector } from './chirpsConnector';
 import { era5LandConnector } from './era5LandConnector';
 import { imergConnector } from './imergConnector';
+import { modisLstConnector } from './modisLstConnector';
 import { smapConnector } from './smapConnector';
 
 // Register all available client connectors
@@ -26,6 +27,7 @@ connectorRegistry.register(chirpsConnector);
 connectorRegistry.register(imergConnector);
 connectorRegistry.register(era5LandConnector);
 connectorRegistry.register(smapConnector);
+connectorRegistry.register(modisLstConnector);
 
 export { connectorRegistry };
 export { powerConnector } from './powerConnector';
@@ -39,6 +41,7 @@ export { chirpsConnector } from './chirpsConnector';
 export { imergConnector } from './imergConnector';
 export { era5LandConnector } from './era5LandConnector';
 export { smapConnector } from './smapConnector';
+export { modisLstConnector } from './modisLstConnector';
 export type {
   StacItem,
   StacSearchOptions,
