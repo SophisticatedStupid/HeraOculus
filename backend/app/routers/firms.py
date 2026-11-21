@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, Request
 
 from ..schemas import FirmsQueryRequest
+from ..security import limiter, require_api_key
 from ..services.firms_service import query_firms_fires
 
-router = APIRouter(prefix="/api/v1/firms", tags=["Wildfire & FIRMS"])
+router = APIRouter(
+    prefix="/api/v1/firms",
+    tags=["Wildfire & FIRMS"],
+    dependencies=[Depends(require_api_key)],
+)
 
 
 @router.post("/fires")
-def get_active_fires(payload: FirmsQueryRequest) -> dict:
+@limiter.limit("5/minute")
+def get_active_fires(request: Request, payload: FirmsQueryRequest) -> dict:
     return query_firms_fires(
         west=payload.west,
         south=payload.south,

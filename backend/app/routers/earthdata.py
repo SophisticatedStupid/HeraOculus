@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import Optional
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 
 from ..schemas import (
     AppeearsPointRequest,
@@ -12,6 +11,7 @@ from ..schemas import (
     TraceGasRequest,
     VerticalProfileRequest,
 )
+from ..security import limiter, require_api_key
 from ..services.earthdata_service import (
     extract_netcdf_subset,
     get_trace_gas_analytics,
@@ -20,21 +20,26 @@ from ..services.earthdata_service import (
     proxy_appeears_point_task,
     search_earthdata_granules,
 )
-from .utils import cleanup_temp_file, read_checked_upload, validate_upload_signature
+from .utils import (
+    cleanup_temp_file,
+    read_checked_upload,
+    run_heavy_task,
+    validate_upload_signature,
+)
 
-router = APIRouter(prefix="/api/v1/earthdata", tags=["Earthdata & NetCDF4"])
+router = APIRouter(
+    prefix="/api/v1/earthdata",
+    tags=["Earthdata & NetCDF4"],
+    dependencies=[Depends(require_api_key)],
+)
 
 # Processing timeout for NetCDF/HDF5 uploads (seconds).
 NETCDF_PROCESS_TIMEOUT = 120.0
 
 
-async def _run_with_timeout(coro, timeout: float = NETCDF_PROCESS_TIMEOUT):
-    """Run an async coroutine with a hard wall-clock timeout."""
-    return await asyncio.wait_for(coro, timeout=timeout)
-
-
 @router.post("/granules")
-def search_granules(payload: EarthdataGranuleRequest) -> dict:
+@limiter.limit("5/minute")
+def search_granules(request: Request, payload: EarthdataGranuleRequest) -> dict:
     return search_earthdata_granules(
         short_name=payload.short_name,
         bbox=payload.bbox,
@@ -45,7 +50,8 @@ def search_granules(payload: EarthdataGranuleRequest) -> dict:
 
 
 @router.post("/appeears-point")
-def submit_appeears_point(payload: AppeearsPointRequest) -> dict:
+@limiter.limit("5/minute")
+def submit_appeears_point(request: Request, payload: AppeearsPointRequest) -> dict:
     return proxy_appeears_point_task(
         product=payload.product,
         layer=payload.layer,
@@ -85,15 +91,13 @@ async def inspect_netcdf(file: UploadFile = File(...)) -> dict:
     path, filename = await read_checked_upload(file)
     validate_upload_signature(path, "netcdf_hdf5")
     try:
-        return await _run_with_timeout(
-            asyncio.to_thread(inspect_netcdf_file, path, filename)
+        return await run_heavy_task(
+            inspect_netcdf_file,
+            (path, filename),
+            timeout=NETCDF_PROCESS_TIMEOUT,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except asyncio.TimeoutError as exc:
-        raise HTTPException(
-            status_code=504, detail="NetCDF inspect timed out."
-        ) from exc
     finally:
         cleanup_temp_file(path)
 
@@ -109,22 +113,18 @@ async def extract_netcdf(
     path, filename = await read_checked_upload(file)
     validate_upload_signature(path, "netcdf_hdf5")
     try:
-        return await _run_with_timeout(
-            asyncio.to_thread(
-                extract_netcdf_subset,
-                path,
-                filename,
-                variable=variable,
-                target_lat=target_lat,
-                target_lon=target_lon,
-                spatial_mean=spatial_mean,
-            )
+        return await run_heavy_task(
+            extract_netcdf_subset,
+            (path, filename),
+            kwargs={
+                "variable": variable,
+                "target_lat": target_lat,
+                "target_lon": target_lon,
+                "spatial_mean": spatial_mean,
+            },
+            timeout=NETCDF_PROCESS_TIMEOUT,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except asyncio.TimeoutError as exc:
-        raise HTTPException(
-            status_code=504, detail="NetCDF extract timed out."
-        ) from exc
     finally:
         cleanup_temp_file(path)

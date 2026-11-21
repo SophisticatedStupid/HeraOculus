@@ -7,8 +7,10 @@ import asyncio
 import os
 import tempfile
 import uuid
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from rasterio.transform import Affine
+
+from ..security import limiter, require_api_key
 
 from ..schemas import (
     AsfSearchRequest,
@@ -53,18 +55,22 @@ from ..services.raster_service import (
     compute_sar_change_from_paths,
     search_asf_sar_granules,
 )
-from .utils import cleanup_temp_file, read_checked_upload, validate_upload_signature
+from .utils import (
+    cleanup_temp_file,
+    read_checked_upload,
+    run_heavy_task,
+    validate_upload_signature,
+)
 
-router = APIRouter(prefix="/api/v1/rasters", tags=["SAR, DEM & LULC Rasters"])
+router = APIRouter(
+    prefix="/api/v1/rasters",
+    tags=["SAR, DEM & LULC Rasters"],
+    dependencies=[Depends(require_api_key)],
+)
 
 # Processing timeout for raster uploads (seconds).  Prevents a single large
 # upload from monopolizing worker threads indefinitely.
 RASTER_PROCESS_TIMEOUT = 120.0
-
-
-async def _run_with_timeout(coro, timeout: float = RASTER_PROCESS_TIMEOUT):
-    """Run an async coroutine with a hard wall-clock timeout."""
-    return await asyncio.wait_for(coro, timeout=timeout)
 
 
 # ---------------------------------------------------------------------------
@@ -497,18 +503,19 @@ async def dem_diff_upload(
     validate_upload_signature(b1_path, "geotiff")
     validate_upload_signature(b2_path, "geotiff")
     try:
-        return await _run_with_timeout(
-            asyncio.to_thread(
-                compute_dem_differencing_from_paths,
-                b1_path, n1, b2_path, n2,
-                lod_threshold_m=lod_threshold_m,
-                pixel_grid_only=pixel_grid_only,
-            )
+        return await run_heavy_task(
+            compute_dem_differencing_from_paths,
+            (b1_path, n1, b2_path, n2),
+            kwargs={
+                "lod_threshold_m": lod_threshold_m,
+                "pixel_grid_only": pixel_grid_only,
+            },
+            timeout=RASTER_PROCESS_TIMEOUT,
         )
-    except asyncio.TimeoutError as exc:
-        raise HTTPException(
-            status_code=504, detail="DEM differencing processing timed out."
-        ) from exc
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Failed to compute DEM DoD: {exc}") from exc
     finally:
@@ -545,21 +552,22 @@ async def sar_change_upload(
     filt = speckle_filter if speckle_filter in {"none", "lee", "mean"} else "lee"
     mode = threshold_mode if threshold_mode in {"fixed", "otsu"} else "fixed"
     try:
-        return await _run_with_timeout(
-            asyncio.to_thread(
-                compute_sar_change_from_paths,
-                b1_path, n1, b2_path, n2,
-                speckle_filter=filt,  # type: ignore[arg-type]
-                window_size=window_size,
-                threshold_db=threshold_db,
-                threshold_mode=mode,  # type: ignore[arg-type]
-                pixel_grid_only=pixel_grid_only,
-            )
+        return await run_heavy_task(
+            compute_sar_change_from_paths,
+            (b1_path, n1, b2_path, n2),
+            kwargs={
+                "speckle_filter": filt,
+                "window_size": window_size,
+                "threshold_db": threshold_db,
+                "threshold_mode": mode,
+                "pixel_grid_only": pixel_grid_only,
+            },
+            timeout=RASTER_PROCESS_TIMEOUT,
         )
-    except asyncio.TimeoutError as exc:
-        raise HTTPException(
-            status_code=504, detail="SAR change processing timed out."
-        ) from exc
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Failed to compute SAR change: {exc}") from exc
     finally:
@@ -596,16 +604,16 @@ async def lulc_upload(
     validate_upload_signature(b1_path, "geotiff")
     validate_upload_signature(b2_path, "geotiff")
     try:
-        return await _run_with_timeout(
-            asyncio.to_thread(
-                compute_lulc_from_paths,
-                b1_path, n1, b2_path, n2, pixel_grid_only=pixel_grid_only
-            )
+        return await run_heavy_task(
+            compute_lulc_from_paths,
+            (b1_path, n1, b2_path, n2),
+            kwargs={"pixel_grid_only": pixel_grid_only},
+            timeout=RASTER_PROCESS_TIMEOUT,
         )
-    except asyncio.TimeoutError as exc:
-        raise HTTPException(
-            status_code=504, detail="LULC transition processing timed out."
-        ) from exc
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Failed to compute LULC matrix: {exc}") from exc
     finally:

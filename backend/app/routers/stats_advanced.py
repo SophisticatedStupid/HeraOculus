@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..schemas import (
     BayesianMcmcRequest,
@@ -10,16 +10,22 @@ from ..schemas import (
     SarimaRequest,
     SpatialFdrRequest,
 )
+from ..security import limiter, require_api_key
 from ..services.bayesian_service import run_bayesian_mcmc
 from ..services.extreme_service import run_extreme_value_analysis
 from ..services.forecast_service import run_sarima_forecast
 from ..services.spatial_fdr_service import run_spatial_fdr_analysis
 
-router = APIRouter(prefix="/api/v1/stats", tags=["Advanced Scientific Statistics"])
+router = APIRouter(
+    prefix="/api/v1/stats",
+    tags=["Advanced Scientific Statistics"],
+    dependencies=[Depends(require_api_key)],
+)
 
 
 @router.post("/sarima")
-def sarima_forecast(payload: SarimaRequest) -> dict:
+@limiter.limit("5/minute")
+def sarima_forecast(request: Request, payload: SarimaRequest) -> dict:
     try:
         return run_sarima_forecast(
             payload.dates,
@@ -37,7 +43,8 @@ def sarima_forecast(payload: SarimaRequest) -> dict:
 
 
 @router.post("/bayesian-mcmc")
-def bayesian_mcmc(payload: BayesianMcmcRequest) -> dict:
+@limiter.limit("5/minute")
+def bayesian_mcmc(request: Request, payload: BayesianMcmcRequest) -> dict:
     try:
         return run_bayesian_mcmc(
             payload.dates,
@@ -53,7 +60,8 @@ def bayesian_mcmc(payload: BayesianMcmcRequest) -> dict:
 
 
 @router.post("/extreme-value")
-def extreme_value(payload: ExtremeValueRequest) -> dict:
+@limiter.limit("5/minute")
+def extreme_value(request: Request, payload: ExtremeValueRequest) -> dict:
     try:
         return run_extreme_value_analysis(
             payload.values,
@@ -69,7 +77,8 @@ def extreme_value(payload: ExtremeValueRequest) -> dict:
 
 
 @router.post("/spatial-fdr")
-def spatial_fdr(payload: SpatialFdrRequest) -> dict:
+@limiter.limit("5/minute")
+def spatial_fdr(request: Request, payload: SpatialFdrRequest) -> dict:
     try:
         return run_spatial_fdr_analysis(
             region_name=payload.region_name or "Gridded Climate Domain",

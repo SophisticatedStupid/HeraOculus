@@ -50,8 +50,8 @@ class TimeSeriesInputPoint(BaseModel):
 
 
 class SarimaRequest(BaseModel):
-    dates: list[str] = Field(min_length=24)
-    values: list[Optional[float]] = Field(min_length=24)
+    dates: list[str] = Field(min_length=24, max_length=100_000)
+    values: list[Optional[float]] = Field(min_length=24, max_length=100_000)
     forecast_steps: int = Field(default=12, ge=1, le=60)
     seasonal_period: int = Field(default=12, ge=1, le=24)
     auto_order: bool = True
@@ -62,8 +62,8 @@ class SarimaRequest(BaseModel):
 
 
 class BayesianMcmcRequest(BaseModel):
-    dates: list[str] = Field(min_length=12)
-    values: list[Optional[float]] = Field(min_length=12)
+    dates: list[str] = Field(min_length=12, max_length=100_000)
+    values: list[Optional[float]] = Field(min_length=12, max_length=100_000)
     model_type: Literal["robust_ar1", "changepoint"] = "robust_ar1"
     chains: int = Field(default=3, ge=2, le=4)
     draws: int = Field(default=900, ge=300, le=2500)
@@ -72,7 +72,7 @@ class BayesianMcmcRequest(BaseModel):
 
 
 class ExtremeValueRequest(BaseModel):
-    values: list[Optional[float]] = Field(min_length=10)
+    values: list[Optional[float]] = Field(min_length=10, max_length=100_000)
     dates: Optional[list[str]] = None
     mode: Literal["gev_block_maxima", "gpd_pot"] = "gev_block_maxima"
     block_size: int = Field(default=12, ge=2, le=60)
