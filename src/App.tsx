@@ -42,6 +42,9 @@ const Phase2Lab = React.lazy(() =>
 const InterpolationLab = React.lazy(() =>
   import('./components/InterpolationLab').then((m) => ({ default: m.InterpolationLab }))
 );
+const ImagerySearchPanel = React.lazy(() =>
+  import('./components/ImagerySearchPanel').then((m) => ({ default: m.ImagerySearchPanel }))
+);
 import { 
   Sparkles, 
   Globe2, 
@@ -727,6 +730,29 @@ export const App: React.FC = () => {
         {currentMode === 'interpolation' && (
           <div>
             <InterpolationLab onClose={() => setCurrentMode('explorer')} />
+          </div>
+        )}
+
+        {/* MODE 9: IMAGERY SEARCH (STAC CATALOG) */}
+        {currentMode === 'imagery' && (
+          <div>
+            <React.Suspense fallback={
+              <div className="flex items-center justify-center p-16 text-silver-500 text-xs">
+                Loading imagery search...
+              </div>
+            }>
+              <ImagerySearchPanel
+                onItemSelect={(item) => {
+                  const coG = Object.values(item.assets)[0] ?? item.thumbnail;
+                  setStatusMessage(
+                    coG
+                      ? `STAC scene selected: ${item.id} (${item.collection}) — COG asset: ${coG}`
+                      : `STAC scene selected: ${item.id} (${item.collection}) — no COG asset available`
+                  );
+                  setCurrentMode('explorer');
+                }}
+              />
+            </React.Suspense>
           </div>
         )}
 

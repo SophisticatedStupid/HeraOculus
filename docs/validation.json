@@ -1,0 +1,646 @@
+{
+  "results": [
+    {
+      "method": "Mann-Kendall",
+      "series": "synthetic_increasing",
+      "statistic": "Z",
+      "ours": 7.98095867,
+      "reference": 7.98095867,
+      "abs_diff": 0.0,
+      "tolerance": 1e-06,
+      "status": "PASS"
+    },
+    {
+      "method": "Mann-Kendall",
+      "series": "synthetic_increasing",
+      "statistic": "p",
+      "ours": 0.0,
+      "reference": 0.0,
+      "abs_diff": 0.0,
+      "tolerance": 1e-06,
+      "status": "PASS"
+    },
+    {
+      "method": "Mann-Kendall",
+      "series": "synthetic_increasing",
+      "statistic": "S",
+      "ours": 686.0,
+      "reference": 686.0,
+      "abs_diff": 0.0,
+      "tolerance": 0.0,
+      "status": "PASS"
+    },
+    {
+      "method": "Mann-Kendall",
+      "series": "synthetic_increasing",
+      "statistic": "var_S",
+      "ours": 7366.66666667,
+      "reference": 7366.66666667,
+      "abs_diff": 0.0,
+      "tolerance": 1e-09,
+      "status": "PASS"
+    },
+    {
+      "method": "Theil-Sen",
+      "series": "synthetic_increasing",
+      "statistic": "slope",
+      "ours": 0.26239787,
+      "reference": 0.26239787,
+      "abs_diff": 0.0,
+      "tolerance": 1e-09,
+      "status": "PASS"
+    },
+    {
+      "method": "Hamed-Rao MK",
+      "series": "synthetic_increasing",
+      "statistic": "Z",
+      "ours": 7.98095867,
+      "reference": 7.98095867,
+      "abs_diff": 0.0,
+      "tolerance": 0.05,
+      "status": "PASS"
+    },
+    {
+      "method": "Hamed-Rao MK",
+      "series": "synthetic_increasing",
+      "statistic": "p",
+      "ours": 0.0,
+      "reference": 0.0,
+      "abs_diff": 0.0,
+      "tolerance": 0.02,
+      "status": "PASS"
+    },
+    {
+      "method": "Hamed-Rao MK",
+      "series": "synthetic_increasing",
+      "statistic": "var_S_ratio",
+      "ours": 1.0,
+      "reference": 1.0,
+      "abs_diff": 0.0,
+      "tolerance": 0.1,
+      "status": "PASS"
+    },
+    {
+      "method": "Mann-Kendall",
+      "series": "synthetic_decreasing",
+      "statistic": "Z",
+      "ours": -7.07217798,
+      "reference": -7.07217798,
+      "abs_diff": 0.0,
+      "tolerance": 1e-06,
+      "status": "PASS"
+    },
+    {
+      "method": "Mann-Kendall",
+      "series": "synthetic_decreasing",
+      "statistic": "p",
+      "ours": 0.0,
+      "reference": 0.0,
+      "abs_diff": 0.0,
+      "tolerance": 1e-06,
+      "status": "PASS"
+    },
+    {
+      "method": "Mann-Kendall",
+      "series": "synthetic_decreasing",
+      "statistic": "S",
+      "ours": -608.0,
+      "reference": -608.0,
+      "abs_diff": 0.0,
+      "tolerance": 0.0,
+      "status": "PASS"
+    },
+    {
+      "method": "Mann-Kendall",
+      "series": "synthetic_decreasing",
+      "statistic": "var_S",
+      "ours": 7366.66666667,
+      "reference": 7366.66666667,
+      "abs_diff": 0.0,
+      "tolerance": 1e-09,
+      "status": "PASS"
+    },
+    {
+      "method": "Theil-Sen",
+      "series": "synthetic_decreasing",
+      "statistic": "slope",
+      "ours": -0.18215588,
+      "reference": -0.18215588,
+      "abs_diff": 0.0,
+      "tolerance": 1e-09,
+      "status": "PASS"
+    },
+    {
+      "method": "Hamed-Rao MK",
+      "series": "synthetic_decreasing",
+      "statistic": "Z",
+      "ours": -7.07217798,
+      "reference": -7.07217798,
+      "abs_diff": 0.0,
+      "tolerance": 0.05,
+      "status": "PASS"
+    },
+    {
+      "method": "Hamed-Rao MK",
+      "series": "synthetic_decreasing",
+      "statistic": "p",
+      "ours": 0.0,
+      "reference": 0.0,
+      "abs_diff": 0.0,
+      "tolerance": 0.02,
+      "status": "PASS"
+    },
+    {
+      "method": "Hamed-Rao MK",
+      "series": "synthetic_decreasing",
+      "statistic": "var_S_ratio",
+      "ours": 1.0,
+      "reference": 1.0,
+      "abs_diff": 0.0,
+      "tolerance": 0.1,
+      "status": "PASS"
+    },
+    {
+      "method": "Mann-Kendall",
+      "series": "synthetic_none",
+      "statistic": "Z",
+      "ours": 0.01165103,
+      "reference": 0.01165103,
+      "abs_diff": 0.0,
+      "tolerance": 1e-06,
+      "status": "PASS"
+    },
+    {
+      "method": "Mann-Kendall",
+      "series": "synthetic_none",
+      "statistic": "p",
+      "ours": 0.99070403,
+      "reference": 0.99070403,
+      "abs_diff": 0.0,
+      "tolerance": 1e-06,
+      "status": "PASS"
+    },
+    {
+      "method": "Mann-Kendall",
+      "series": "synthetic_none",
+      "statistic": "S",
+      "ours": 2.0,
+      "reference": 2.0,
+      "abs_diff": 0.0,
+      "tolerance": 0.0,
+      "status": "PASS"
+    },
+    {
+      "method": "Mann-Kendall",
+      "series": "synthetic_none",
+      "statistic": "var_S",
+      "ours": 7366.66666667,
+      "reference": 7366.66666667,
+      "abs_diff": 0.0,
+      "tolerance": 1e-09,
+      "status": "PASS"
+    },
+    {
+      "method": "Theil-Sen",
+      "series": "synthetic_none",
+      "statistic": "slope",
+      "ours": 0.00017866,
+      "reference": 0.00017866,
+      "abs_diff": 0.0,
+      "tolerance": 1e-09,
+      "status": "PASS"
+    },
+    {
+      "method": "Hamed-Rao MK",
+      "series": "synthetic_none",
+      "statistic": "Z",
+      "ours": 0.01313792,
+      "reference": 0.01143148,
+      "abs_diff": 0.00170644,
+      "tolerance": 0.05,
+      "status": "PASS"
+    },
+    {
+      "method": "Hamed-Rao MK",
+      "series": "synthetic_none",
+      "statistic": "p",
+      "ours": 0.98951776,
+      "reference": 0.9908792,
+      "abs_diff": 0.00136144,
+      "tolerance": 0.02,
+      "status": "PASS"
+    },
+    {
+      "method": "Hamed-Rao MK",
+      "series": "synthetic_none",
+      "statistic": "var_S_ratio",
+      "ours": 0.7864584,
+      "reference": 1.03878189,
+      "abs_diff": 0.25232349,
+      "tolerance": 0.1,
+      "status": "FAIL"
+    },
+    {
+      "method": "Mann-Kendall",
+      "series": "synthetic_tied",
+      "statistic": "Z",
+      "ours": 8.50009878,
+      "reference": 8.50009878,
+      "abs_diff": 0.0,
+      "tolerance": 1e-06,
+      "status": "PASS"
+    },
+    {
+      "method": "Mann-Kendall",
+      "series": "synthetic_tied",
+      "statistic": "p",
+      "ours": 0.0,
+      "reference": 0.0,
+      "abs_diff": 0.0,
+      "tolerance": 1e-06,
+      "status": "PASS"
+    },
+    {
+      "method": "Mann-Kendall",
+      "series": "synthetic_tied",
+      "statistic": "S",
+      "ours": 727.0,
+      "reference": 727.0,
+      "abs_diff": 0.0,
+      "tolerance": 0.0,
+      "status": "PASS"
+    },
+    {
+      "method": "Mann-Kendall",
+      "series": "synthetic_tied",
+      "statistic": "var_S",
+      "ours": 7295.0,
+      "reference": 7295.0,
+      "abs_diff": 0.0,
+      "tolerance": 1e-09,
+      "status": "PASS"
+    },
+    {
+      "method": "Theil-Sen",
+      "series": "synthetic_tied",
+      "statistic": "slope",
+      "ours": 0.3125,
+      "reference": 0.3125,
+      "abs_diff": 0.0,
+      "tolerance": 1e-09,
+      "status": "PASS"
+    },
+    {
+      "method": "Hamed-Rao MK",
+      "series": "synthetic_tied",
+      "statistic": "Z",
+      "ours": 8.50009878,
+      "reference": 8.50009878,
+      "abs_diff": 0.0,
+      "tolerance": 0.05,
+      "status": "PASS"
+    },
+    {
+      "method": "Hamed-Rao MK",
+      "series": "synthetic_tied",
+      "statistic": "p",
+      "ours": 0.0,
+      "reference": 0.0,
+      "abs_diff": 0.0,
+      "tolerance": 0.02,
+      "status": "PASS"
+    },
+    {
+      "method": "Hamed-Rao MK",
+      "series": "synthetic_tied",
+      "statistic": "var_S_ratio",
+      "ours": 1.0,
+      "reference": 1.0,
+      "abs_diff": 0.0,
+      "tolerance": 0.1,
+      "status": "PASS"
+    },
+    {
+      "method": "Mann-Kendall",
+      "series": "synthetic_ar1_trend",
+      "statistic": "Z",
+      "ours": 5.6973559,
+      "reference": 5.6973559,
+      "abs_diff": 0.0,
+      "tolerance": 1e-06,
+      "status": "PASS"
+    },
+    {
+      "method": "Mann-Kendall",
+      "series": "synthetic_ar1_trend",
+      "statistic": "p",
+      "ours": 1e-08,
+      "reference": 1e-08,
+      "abs_diff": 0.0,
+      "tolerance": 1e-06,
+      "status": "PASS"
+    },
+    {
+      "method": "Mann-Kendall",
+      "series": "synthetic_ar1_trend",
+      "statistic": "S",
+      "ours": 490.0,
+      "reference": 490.0,
+      "abs_diff": 0.0,
+      "tolerance": 0.0,
+      "status": "PASS"
+    },
+    {
+      "method": "Mann-Kendall",
+      "series": "synthetic_ar1_trend",
+      "statistic": "var_S",
+      "ours": 7366.66666667,
+      "reference": 7366.66666667,
+      "abs_diff": 0.0,
+      "tolerance": 1e-09,
+      "status": "PASS"
+    },
+    {
+      "method": "Theil-Sen",
+      "series": "synthetic_ar1_trend",
+      "statistic": "slope",
+      "ours": 0.16433292,
+      "reference": 0.16433292,
+      "abs_diff": 0.0,
+      "tolerance": 1e-09,
+      "status": "PASS"
+    },
+    {
+      "method": "Hamed-Rao MK",
+      "series": "synthetic_ar1_trend",
+      "statistic": "Z",
+      "ours": 2.76708838,
+      "reference": 3.51233285,
+      "abs_diff": 0.74524447,
+      "tolerance": 0.05,
+      "status": "FAIL"
+    },
+    {
+      "method": "Hamed-Rao MK",
+      "series": "synthetic_ar1_trend",
+      "statistic": "p",
+      "ours": 0.00565594,
+      "reference": 0.00044419,
+      "abs_diff": 0.00521175,
+      "tolerance": 0.02,
+      "status": "PASS"
+    },
+    {
+      "method": "Hamed-Rao MK",
+      "series": "synthetic_ar1_trend",
+      "statistic": "var_S_ratio",
+      "ours": 4.23936331,
+      "reference": 2.63120913,
+      "abs_diff": 1.60815417,
+      "tolerance": 0.1,
+      "status": "FAIL"
+    },
+    {
+      "method": "Mann-Kendall",
+      "series": "synthetic_short",
+      "statistic": "Z",
+      "ours": 0.0,
+      "reference": 0.0,
+      "abs_diff": 0.0,
+      "tolerance": 1e-06,
+      "status": "PASS"
+    },
+    {
+      "method": "Mann-Kendall",
+      "series": "synthetic_short",
+      "statistic": "p",
+      "ours": 1.0,
+      "reference": 1.0,
+      "abs_diff": 0.0,
+      "tolerance": 1e-06,
+      "status": "PASS"
+    },
+    {
+      "method": "Mann-Kendall",
+      "series": "synthetic_short",
+      "statistic": "S",
+      "ours": 1.0,
+      "reference": 1.0,
+      "abs_diff": 0.0,
+      "tolerance": 0.0,
+      "status": "PASS"
+    },
+    {
+      "method": "Mann-Kendall",
+      "series": "synthetic_short",
+      "statistic": "var_S",
+      "ours": 3.66666667,
+      "reference": 3.66666667,
+      "abs_diff": 0.0,
+      "tolerance": 1e-09,
+      "status": "PASS"
+    },
+    {
+      "method": "Theil-Sen",
+      "series": "synthetic_short",
+      "statistic": "slope",
+      "ours": 0.25,
+      "reference": 0.25,
+      "abs_diff": 0.0,
+      "tolerance": 1e-09,
+      "status": "PASS"
+    },
+    {
+      "method": "GEV",
+      "series": "synthetic_gev_block_1",
+      "statistic": "shape_xi",
+      "ours": -0.14206116,
+      "reference": -0.14206116,
+      "abs_diff": 0.0,
+      "tolerance": 1e-06,
+      "status": "PASS"
+    },
+    {
+      "method": "GEV",
+      "series": "synthetic_gev_block_1",
+      "statistic": "location_mu",
+      "ours": 9.78839729,
+      "reference": 9.78839729,
+      "abs_diff": 0.0,
+      "tolerance": 1e-06,
+      "status": "PASS"
+    },
+    {
+      "method": "GEV",
+      "series": "synthetic_gev_block_1",
+      "statistic": "scale_sigma",
+      "ours": 1.97724331,
+      "reference": 1.97724331,
+      "abs_diff": 0.0,
+      "tolerance": 1e-06,
+      "status": "PASS"
+    },
+    {
+      "method": "GEV",
+      "series": "synthetic_gev_block_1",
+      "statistic": "return_level_T50",
+      "ours": 15.71108414,
+      "reference": 15.71108414,
+      "abs_diff": 0.0,
+      "tolerance": 0.0001,
+      "status": "PASS"
+    },
+    {
+      "method": "GEV",
+      "series": "synthetic_gev_block_2",
+      "statistic": "shape_xi",
+      "ours": 0.41120535,
+      "reference": 0.41120535,
+      "abs_diff": 0.0,
+      "tolerance": 1e-06,
+      "status": "PASS"
+    },
+    {
+      "method": "GEV",
+      "series": "synthetic_gev_block_2",
+      "statistic": "location_mu",
+      "ours": 5.06830357,
+      "reference": 5.06830357,
+      "abs_diff": 0.0,
+      "tolerance": 1e-06,
+      "status": "PASS"
+    },
+    {
+      "method": "GEV",
+      "series": "synthetic_gev_block_2",
+      "statistic": "scale_sigma",
+      "ours": 1.50020492,
+      "reference": 1.50020492,
+      "abs_diff": 0.0,
+      "tolerance": 1e-06,
+      "status": "PASS"
+    },
+    {
+      "method": "GEV",
+      "series": "synthetic_gev_block_2",
+      "statistic": "return_level_T50",
+      "ours": 19.57165806,
+      "reference": 19.57165806,
+      "abs_diff": 0.0,
+      "tolerance": 0.0001,
+      "status": "PASS"
+    },
+    {
+      "method": "GEV",
+      "series": "synthetic_gev_block_3",
+      "statistic": "shape_xi",
+      "ours": -0.03381836,
+      "reference": -0.03381836,
+      "abs_diff": 0.0,
+      "tolerance": 1e-06,
+      "status": "PASS"
+    },
+    {
+      "method": "GEV",
+      "series": "synthetic_gev_block_3",
+      "statistic": "location_mu",
+      "ours": 0.00859275,
+      "reference": 0.00859275,
+      "abs_diff": 0.0,
+      "tolerance": 1e-06,
+      "status": "PASS"
+    },
+    {
+      "method": "GEV",
+      "series": "synthetic_gev_block_3",
+      "statistic": "scale_sigma",
+      "ours": 1.08427138,
+      "reference": 1.08427138,
+      "abs_diff": 0.0,
+      "tolerance": 1e-06,
+      "status": "PASS"
+    },
+    {
+      "method": "GEV",
+      "series": "synthetic_gev_block_3",
+      "statistic": "return_level_T50",
+      "ours": 3.9720972,
+      "reference": 3.9720972,
+      "abs_diff": 0.0,
+      "tolerance": 0.0001,
+      "status": "PASS"
+    },
+    {
+      "method": "GEV",
+      "series": "real_mauna_loa_co2_annual_max",
+      "statistic": "shape_xi",
+      "ours": -0.04029931,
+      "reference": -0.04029931,
+      "abs_diff": 0.0,
+      "tolerance": 1e-06,
+      "status": "PASS"
+    },
+    {
+      "method": "GEV",
+      "series": "real_mauna_loa_co2_annual_max",
+      "statistic": "location_mu",
+      "ours": 346.85889886,
+      "reference": 346.85889886,
+      "abs_diff": 0.0,
+      "tolerance": 1e-06,
+      "status": "PASS"
+    },
+    {
+      "method": "GEV",
+      "series": "real_mauna_loa_co2_annual_max",
+      "statistic": "scale_sigma",
+      "ours": 28.16519184,
+      "reference": 28.16519184,
+      "abs_diff": 0.0,
+      "tolerance": 1e-06,
+      "status": "PASS"
+    },
+    {
+      "method": "GEV",
+      "series": "real_mauna_loa_co2_annual_max",
+      "statistic": "return_level_T50",
+      "ours": 448.55284129,
+      "reference": 448.55284129,
+      "abs_diff": 0.0,
+      "tolerance": 0.0001,
+      "status": "PASS"
+    }
+  ],
+  "discrepancies": [
+    {
+      "method": "Hamed-Rao MK",
+      "series": "synthetic_none",
+      "statistic": "var_S_ratio",
+      "ours": 0.7864584,
+      "reference": 1.03878189,
+      "abs_diff": 0.25232349,
+      "tolerance": 0.1,
+      "status": "FAIL"
+    },
+    {
+      "method": "Hamed-Rao MK",
+      "series": "synthetic_ar1_trend",
+      "statistic": "Z",
+      "ours": 2.76708838,
+      "reference": 3.51233285,
+      "abs_diff": 0.74524447,
+      "tolerance": 0.05,
+      "status": "FAIL"
+    },
+    {
+      "method": "Hamed-Rao MK",
+      "series": "synthetic_ar1_trend",
+      "statistic": "var_S_ratio",
+      "ours": 4.23936331,
+      "reference": 2.63120913,
+      "abs_diff": 1.60815417,
+      "tolerance": 0.1,
+      "status": "FAIL"
+    }
+  ]
+}

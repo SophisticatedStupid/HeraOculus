@@ -12,13 +12,14 @@ import {
   Loader2,
   Satellite,
   RefreshCw,
+  Image,
   Upload,
   Menu,
   X,
   type LucideIcon,
 } from 'lucide-react';
 
-export type AppMode = 'explorer' | 'detective' | 'contrast' | 'encyclopedia' | 'upload' | 'lab' | 'phase2' | 'interpolation';
+export type AppMode = 'explorer' | 'detective' | 'contrast' | 'encyclopedia' | 'upload' | 'lab' | 'phase2' | 'interpolation' | 'imagery';
 export type DataFeedSource = 'live' | 'calibrated' | 'csv' | 'satellite' | 'reanalysis';
 
 const DATA_FEED_META: Record<
@@ -80,6 +81,7 @@ const navItems: { mode: AppMode; label: string; Icon: LucideIcon }[] = [
   { mode: 'lab', label: 'Statistical lab', Icon: FlaskConical },
   { mode: 'phase2', label: 'Earth compute lab', Icon: Cpu },
   { mode: 'interpolation', label: 'Raster Interpolation', Icon: Layout },
+  { mode: 'imagery', label: 'Imagery Search', Icon: Image },
 ];
 
 function IrisLogo() {

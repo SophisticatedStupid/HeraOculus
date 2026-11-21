@@ -31,6 +31,7 @@ class Settings:
     )
     max_upload_bytes: int = 35 * 1024 * 1024  # 35 MB safety bound for GeoTIFF / NetCDF uploads
     http_timeout_seconds: float = 25.0
+    stac_provider: str = "earth-search"
 
 
 settings = Settings()

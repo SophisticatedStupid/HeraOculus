@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Literal, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 ProvenanceTier = Literal[
     "satellite_observation",
@@ -456,3 +457,284 @@ class ExportRequest(BaseModel):
         description="Affine transform as dict with keys a,b,c,d,e,f."
     )
     method: str = Field(default="unknown", description="Interpolation method used.")
+
+
+# ---------------------------------------------------------------------------
+# STAC (satellite imagery catalog) search schemas
+# ---------------------------------------------------------------------------
+
+STAC_ALLOWED_COLLECTIONS: list[str] = ["sentinel-2-l2a", "landsat-c2-l2"]
+
+MAX_STAC_BBOX_AREA_SQ_DEG = 100.0
+MAX_STAC_LIMIT = 100
+MAX_STAC_DATE_SPAN_DAYS = 365 * 2
+
+
+class StacSearchRequest(BaseModel):
+    """Search public STAC catalogs (Earth Search / Planetary Computer).
+
+    Validation rules:
+      * ``bbox``: [minx, miny, maxx, maxy] in degrees; must be a valid box
+        covering no more than ``MAX_STAC_BBOX_AREA_SQ_DEG`` sq deg.
+      * ``collections``: must be drawn from the allowed collection list.
+      * ``limit``: 1..100.
+      * date range: at least one of start_date/end_date, and the span between
+        them may not exceed 2 years.
+    """
+
+    collections: list[Literal["sentinel-2-l2a", "landsat-c2-l2"]] = Field(
+        min_length=1,
+        description="STAC collection IDs to search (allowlisted).",
+    )
+    bbox: list[float] = Field(min_length=4, max_length=4)
+    start_date: Optional[str] = Field(
+        default=None,
+        description="ISO-8601 datetime (inclusive). At least one of start_date/end_date required.",
+    )
+    end_date: Optional[str] = Field(
+        default=None,
+        description="ISO-8601 datetime (inclusive). At least one of start_date/end_date required.",
+    )
+    max_cloud_cover: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=100.0,
+        description="Upper bound on eo:cloud_cover (percent).",
+    )
+    limit: int = Field(default=10, ge=1, le=MAX_STAC_LIMIT)
+    page_token: Optional[str] = Field(
+        default=None,
+        description="Opaque next-page token returned by a previous search response.",
+    )
+
+    @field_validator("bbox")
+    @classmethod
+    def _validate_bbox(cls, v: list[float]) -> list[float]:
+        if len(v) != 4:
+            raise ValueError("bbox must be [minx, miny, maxx, maxy] (4 values).")
+        minx, miny, maxx, maxy = v
+        for name, val in (("minx", minx), ("miny", miny), ("maxx", maxx), ("maxy", maxy)):
+            if not isinstance(val, (int, float)) or not _is_finite_number(val):
+                raise ValueError(f"bbox {name} must be a finite number.")
+        if not (-180.0 <= minx <= 180.0 and -180.0 <= maxx <= 180.0):
+            raise ValueError("bbox longitudes must be within [-180, 180].")
+        if not (-90.0 <= miny <= 90.0 and -90.0 <= maxy <= 90.0):
+            raise ValueError("bbox latitudes must be within [-90, 90].")
+        if minx > maxx or miny > maxy:
+            raise ValueError("bbox min values must be <= max values.")
+        area_sq_deg = (maxx - minx) * (maxy - miny)
+        if area_sq_deg > MAX_STAC_BBOX_AREA_SQ_DEG:
+            raise ValueError(
+                f"bbox area {area_sq_deg:.1f} sq deg exceeds the "
+                f"{MAX_STAC_BBOX_AREA_SQ_DEG} sq deg maximum."
+            )
+        return [float(x) for x in v]
+
+    @model_validator(mode="after")
+    def _validate_date_range(self) -> "StacSearchRequest":
+        if not self.start_date and not self.end_date:
+            raise ValueError("At least one of start_date or end_date is required.")
+        if self.start_date and self.end_date:
+            try:
+                start = _parse_iso_datetime(self.start_date)
+                end = _parse_iso_datetime(self.end_date)
+            except ValueError as exc:
+                raise ValueError(f"Invalid start_date/end_date: {exc}") from exc
+            if end < start:
+                raise ValueError("end_date must be >= start_date.")
+            if (end - start).days > MAX_STAC_DATE_SPAN_DAYS:
+                raise ValueError(
+                    f"date range exceeds {MAX_STAC_DATE_SPAN_DAYS} days "
+                    f"(maximum 2 years)."
+                )
+        return self
+
+
+class StacItem(BaseModel):
+    """Normalized STAC item returned by the catalog search."""
+
+    id: str
+    collection: str
+    provider: str
+    datetime: Optional[str] = None
+    cloud_cover: Optional[float] = None
+    bbox: Optional[list[float]] = None
+    platform: Optional[str] = None
+    assets: dict[str, str] = Field(
+        default_factory=dict,
+        description="Canonical asset hrefs (red, nir, swir, scl, blue, green, thumbnail).",
+    )
+    thumbnail: Optional[str] = None
+    geometry: Optional[dict] = None
+
+
+class StacSearchContext(BaseModel):
+    matched: Optional[int] = None
+    returned: int
+    limit: int
+
+
+class StacSearchResponse(BaseModel):
+    provider: str
+    items: list[StacItem]
+    context: StacSearchContext
+    next_token: Optional[str] = None
+
+
+def _is_finite_number(value: Any) -> bool:
+    try:
+        import math
+
+        return math.isfinite(float(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def _parse_iso_datetime(value: str) -> datetime:
+    """Parse an ISO-8601 datetime, tolerating a trailing 'Z'."""
+    text = value.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    dt = datetime.fromisoformat(text)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+# ---------------------------------------------------------------------------
+# Gridded climate / reanalysis rainfall schemas
+# ---------------------------------------------------------------------------
+
+GRIDDED_ALLOWED_DATASETS: list[str] = ["chirps", "imerg", "era5-land"]
+GRIDDED_ALLOWED_VARIABLES: list[str] = ["precip"]
+GRIDDED_MAX_BBOX_AREA_SQ_DEG = 100.0
+GRIDDED_MAX_DATE_SPAN_MONTHS = 40 * 12
+
+
+class GriddedSeriesRequest(BaseModel):
+    """Request a normalized monthly precipitation series from a gridded product.
+
+    Exactly one of ``lat``/``lon`` (point, nearest cell) or ``bbox`` (area
+    mean) must be provided.  ``area_mean`` requires ``bbox``.
+    """
+
+    variable: Literal["precip"] = Field(
+        default="precip",
+        description="Variable to retrieve (only 'precip' is supported).",
+    )
+    start_date: str = Field(
+        description="Start month, inclusive, 'YYYY-MM'."
+    )
+    end_date: str = Field(
+        description="End month, inclusive, 'YYYY-MM'."
+    )
+    lat: Optional[float] = Field(
+        default=None,
+        description="Query latitude (point extraction, nearest cell).",
+    )
+    lon: Optional[float] = Field(
+        default=None,
+        description="Query longitude (point extraction, nearest cell).",
+    )
+    bbox: Optional[list[float]] = Field(
+        default=None,
+        min_length=4,
+        max_length=4,
+        description="[min_lon, min_lat, max_lon, max_lat] for area-mean extraction.",
+    )
+    area_mean: bool = Field(
+        default=False,
+        description="If true, return the area-mean over ``bbox``; otherwise "
+        "nearest-cell to (lat, lon).",
+    )
+
+    @field_validator("variable")
+    @classmethod
+    def _validate_variable(cls, v: str) -> str:
+        if v not in GRIDDED_ALLOWED_VARIABLES:
+            raise ValueError(
+                f"Variable '{v}' not allowed. Allowed: {GRIDDED_ALLOWED_VARIABLES}."
+            )
+        return v
+
+    @field_validator("start_date", "end_date")
+    @classmethod
+    def _validate_ym(cls, v: str) -> str:
+        try:
+            parts = v.strip().split("-")
+            if len(parts) != 2:
+                raise ValueError
+            y, m = int(parts[0]), int(parts[1])
+        except (ValueError, TypeError):
+            raise ValueError(f"Date '{v}' must be 'YYYY-MM'.")
+        if not (1 <= m <= 12):
+            raise ValueError(f"Month in '{v}' must be in 1..12.")
+        return f"{y:04d}-{m:02d}"
+
+    @field_validator("bbox")
+    @classmethod
+    def _validate_bbox(cls, v: Optional[list[float]]) -> Optional[list[float]]:
+        if v is None:
+            return None
+        min_lon, min_lat, max_lon, max_lat = v
+        for name, val in (
+            ("min_lon", min_lon),
+            ("min_lat", min_lat),
+            ("max_lon", max_lon),
+            ("max_lat", max_lat),
+        ):
+            if not isinstance(val, (int, float)) or not _is_finite_number(val):
+                raise ValueError(f"bbox {name} must be a finite number.")
+        if not (-180.0 <= min_lon <= 180.0 and -180.0 <= max_lon <= 180.0):
+            raise ValueError("bbox longitudes must be within [-180, 180].")
+        if not (-90.0 <= min_lat <= 90.0 and -90.0 <= max_lat <= 90.0):
+            raise ValueError("bbox latitudes must be within [-90, 90].")
+        if min_lon > max_lon or min_lat > max_lat:
+            raise ValueError("bbox min values must be <= max values.")
+        area_sq_deg = (max_lon - min_lon) * (max_lat - min_lat)
+        if area_sq_deg > GRIDDED_MAX_BBOX_AREA_SQ_DEG:
+            raise ValueError(
+                f"bbox area {area_sq_deg:.1f} sq deg exceeds the "
+                f"{GRIDDED_MAX_BBOX_AREA_SQ_DEG} sq deg maximum."
+            )
+        return [float(x) for x in v]
+
+    @model_validator(mode="after")
+    def _validate_location_and_range(self) -> "GriddedSeriesRequest":
+        has_point = self.lat is not None and self.lon is not None
+        has_bbox = self.bbox is not None
+        if has_point == has_bbox:
+            raise ValueError(
+                "Provide exactly one of (lat, lon) for point extraction or "
+                "bbox for area-mean extraction."
+            )
+        if self.area_mean and not has_bbox:
+            raise ValueError("area_mean requires a bbox.")
+        if has_point:
+            if not (-90.0 <= self.lat <= 90.0 and -180.0 <= self.lon <= 180.0):
+                raise ValueError(
+                    "lat must be in [-90, 90] and lon in [-180, 180]."
+                )
+
+        try:
+            sy, sm = [int(x) for x in self.start_date.split("-")]
+            ey, em = [int(x) for x in self.end_date.split("-")]
+        except ValueError as exc:
+            raise ValueError("start_date/end_date must be 'YYYY-MM'.") from exc
+        if (ey, em) < (sy, sm):
+            raise ValueError("end_date must be >= start_date.")
+        span = (ey - sy) * 12 + (em - sm) + 1
+        if span > GRIDDED_MAX_DATE_SPAN_MONTHS:
+            raise ValueError(
+                f"date range spans {span} months; maximum is "
+                f"{GRIDDED_MAX_DATE_SPAN_MONTHS} months (40 years)."
+            )
+        return self
+
+
+class GriddedSeriesResponse(BaseModel):
+    status: Literal["available", "unavailable"]
+    message: str
+    series: Optional[dict] = None
+
+

@@ -8,7 +8,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from .config import settings
-from .routers import earthdata, firms, health, rasters, stats_advanced
+from .routers import earthdata, firms, gridded, health, rasters, stats_advanced, stac
 from .security import limiter
 
 app = FastAPI(
@@ -37,6 +37,8 @@ app.include_router(stats_advanced.router)
 app.include_router(firms.router)
 app.include_router(earthdata.router)
 app.include_router(rasters.router)
+app.include_router(stac.router)
+app.include_router(gridded.router)
 
 
 @app.get("/")

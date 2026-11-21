@@ -21,6 +21,7 @@ import { powerConnector } from '../src/services/connectors/powerConnector';
 import { modisConnector } from '../src/services/connectors/modisConnector';
 import { usgsConnector } from '../src/services/connectors/usgsConnector';
 import { noaaConnector } from '../src/services/connectors/noaaConnector';
+import { stacConnector } from '../src/services/connectors/stacConnector';
 import { describe, expect, it } from 'vitest';
 
 const RESULTS: Array<{
@@ -52,15 +53,16 @@ function findCandidate(
 }
 
 describe('connector registry', () => {
-  it('registers all six connectors', () => {
+  it('registers all seven connectors', () => {
     const ids = connectorRegistry.getAll().map(c => c.id).sort();
-    expect(ids).toHaveLength(6);
+    expect(ids).toHaveLength(7);
     expect(ids).toContain('nasa-power');
     expect(ids).toContain('ornl-modis');
     expect(ids).toContain('usgs-water');
     expect(ids).toContain('noaa-tides');
     expect(ids).toContain('nasa-cmr');
     expect(ids).toContain('nasa-gibs');
+    expect(ids).toContain('stac-catalog');
   });
 
   it('distinguishes global vs regional coverage', () => {
@@ -73,6 +75,7 @@ describe('connector registry', () => {
     expect(byId.get('noaa-tides')!.capabilities.coverage.maxStationDistanceKm).toBe(500);
     expect(byId.get('nasa-cmr')!.capabilities.coverage.kind).toBe('global');
     expect(byId.get('nasa-gibs')!.capabilities.coverage.kind).toBe('global');
+    expect(byId.get('stac-catalog')!.capabilities.coverage.kind).toBe('global');
   });
 });
 
@@ -208,5 +211,37 @@ describe('no masquerading live sources', () => {
         }
       }
     }
+  });
+});
+
+describe('STAC connector — provenance labelling & capabilities', () => {
+  it('is labelled satellite_observation with global catalog-only coverage', () => {
+    expect(stacConnector.provenanceType).toBe('satellite_observation');
+    expect(stacConnector.capabilities.catalogSearch).toBe(true);
+    expect(stacConnector.capabilities.timeSeries).toBe(false);
+    expect(stacConnector.capabilities.mapTiles).toBe(false);
+    expect(stacConnector.capabilities.regionSubset).toBe(true);
+    expect(stacConnector.capabilities.coverage.kind).toBe('global');
+    expect(stacConnector.supportedVariables).toHaveLength(0);
+    expect(stacConnector.id).toBe('stac-catalog');
+  });
+
+  it('fetchTimeSeries returns an explicit empty catalog-only result', async () => {
+    const res = await stacConnector.fetchTimeSeries({
+      lat: 37.0,
+      lon: -122.0,
+      variableId: 'ndvi',
+    });
+    expect(res.points).toEqual([]);
+    expect(res.provenance).toBe('satellite_observation');
+    expect(res.sourceLabel).toBe('STAC Catalog');
+    expect(res.statusMessage).toContain('catalog search service');
+  });
+
+  it('is registered and discoverable in the registry', () => {
+    const ids = connectorRegistry.getAll().map(c => c.id);
+    expect(ids).toContain('stac-catalog');
+    const byId = new Map(connectorRegistry.getAll().map(c => [c.id, c]));
+    expect(byId.get('stac-catalog')).toBeDefined();
   });
 });

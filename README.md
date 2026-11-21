@@ -57,7 +57,7 @@ Every data source carries a `provenanceType` that distinguishes live measurement
 | Provenance type | Sources | Live data? | Notes |
 |---|---|---|---|
 | `reanalysis_model` | NASA POWER (MERRA-2 / GLDAS / CERES) | Yes (reanalysis) | Global gridded reanalysis, not station measurements |
-| `satellite_observation` | MODIS (NDVI/EVI), GIBS (map tiles), CMR (catalog) | Yes (satellite tiles/catalog) | GIBS SST layer is `GHRSST_L4_MUR` map tiles; CMR is metadata-only, no time series |
+| `satellite_observation` | MODIS (NDVI/EVI), GIBS (map tiles), CMR (catalog), STAC (scene catalog + COG asset URLs) | Yes (catalog/tiles; STAC assets are live COG URLs) | GIBS SST layer is `GHRSST_L4_MUR` map tiles; CMR and STAC are metadata/catalog — STAC exposes Cloud-Optimized GeoTIFF asset URLs for direct access |
 | `in_situ_gauge` | USGS NWIS streamflow, NOAA CO-OPS tide gauges | Yes (gauge/station) | United States only |
 | `user_upload` | DEM, SAR, LULC GeoTIFF/NetCDF uploads | N/A (user-provided) | 35 MB limit per file |
 | `synthetic_demo` | Fallback when no live source covers a location | No | Calibrated demonstration data; never masquerades as live |
@@ -90,8 +90,63 @@ Base path: `/api/v1`
 | `/rasters/asf-search` | POST | ASF SAR scene search |
 | `/rasters/lulc-transitions` | POST | LULC transition analysis (array input) |
 | `/rasters/lulc-transitions/upload` | POST | LULC transition analysis (file upload) |
+| `/stac/search` | POST | Search public STAC catalogs (Sentinel-2, Landsat) via Earth Search / Planetary Computer proxy |
 
 **File upload limit:** 35 MB per file, enforced during streaming (not after full read). Invalid magic bytes, empty files, and path-traversal filenames are rejected with 400; oversized files return 413.
+
+### Example: STAC search (Earth Search, keyless)
+
+Request:
+
+```http
+POST /api/v1/stac/search
+Content-Type: application/json
+
+{
+  "collections": ["sentinel-2-l2a"],
+  "bbox": [-122.5, 37.0, -122.0, 37.5],
+  "start_date": "2024-06-01T00:00:00Z",
+  "end_date": "2024-06-10T23:59:59Z",
+  "limit": 1
+}
+```
+
+Normalized response:
+
+```json
+{
+  "provider": "earth-search",
+  "items": [
+    {
+      "id": "S2B_10SEF_20240607_0_L2A",
+      "collection": "sentinel-2-l2a",
+      "provider": "earth-search",
+      "datetime": "2024-06-07T19:04:26.934000Z",
+      "cloud_cover": 55.44,
+      "bbox": [-122.5, 37.0, -122.0, 37.5],
+      "platform": "sentinel-2b",
+      "assets": {
+        "red": "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/10/S/EF/2024/6/S2B_10SEF_20240607_0_L2A/B04.tif",
+        "nir": "https://sentinel-cogs.s3.us-west-2.amazonaws.com/.../B08.tif",
+        "swir": "https://sentinel-cogs.s3.us-west-2.amazonaws.com/.../B11.tif",
+        "scl": "https://sentinel-cogs.s3.us-west-2.amazonaws.com/.../SCL.tif",
+        "blue": "https://sentinel-cogs.s3.us-west-2.amazonaws.com/.../B02.tif",
+        "green": "https://sentinel-cogs.s3.us-west-2.amazonaws.com/.../B03.tif",
+        "thumbnail": "https://sentinel-cogs.s3.us-west-2.amazonaws.com/.../thumbnail.jpg"
+      },
+      "thumbnail": "https://sentinel-cogs.s3.us-west-2.amazonaws.com/.../thumbnail.jpg",
+      "geometry": { "type": "Point", "coordinates": [-122.25, 37.25] }
+    }
+  ],
+  "context": { "matched": 4, "returned": 1, "limit": 1 },
+  "next_token": null
+}
+```
+
+Set `STAC_PROVIDER=planetary-computer` in the backend environment to use Microsoft
+Planetary Computer instead; its Azure Blob asset URLs are signed with a SAS token
+via `https://planetarycomputer.microsoft.com/api/sas/v1/sign?href=...` before
+being returned. No tokens or credentials are stored or logged.
 
 ## Frontend
 
@@ -222,7 +277,7 @@ Geo-Iris-main/
 │   │   └── ...
 │   ├── services/
 │   │   ├── statistics/          # trend, ANOVA, nonlinear, GEV, bootstrap, PCA
-│   │   ├── connectors/          # 6 EarthData connectors + registry
+│   │   ├── connectors/          # 7 EarthData connectors + registry
 │   │   ├── nasaData.ts          # CSV ingestion, variable definitions
 │   │   └── ...
 │   ├── workers/
