@@ -1,0 +1,813 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`generateJsScript > CHIRPS precip snapshot 1`] = `
+"// HeraOculus → Google Earth Engine (Code Editor) JavaScript
+// Generated automatically. Run this in your own GEE Code Editor.
+// Geo-Iris/HeraOculus does not execute, store, or transmit this code.
+// Dataset: CHIRPS Daily Precipitation (V2 Final)
+// eeCollectionId: UCSB-CHG/CHIRPS/DAILY | band: precipitation | scale: 1 | units: mm/day
+// Native resolution: 5566 m | reducer: mean
+// Region: {"kind":"point","lat":24.8948,"lon":91.8687}
+// Date range: 2024-01-01 to 2024-12-31
+// Variable: precip | export target: chart
+// Geometry uses [lon, lat] ordering as required by Earth Engine.
+
+// Daily precipitation, quasi-global (60°S–60°N), ~0.05° (~5.6 km).
+// No scale factor (raw values already in mm/day).
+// For monthly totals, sum daily values; for annual, sum then divide by years as needed..
+
+// 1. Define the geometry from the HeraOculus selection.
+var geometry = ee.Point([91.8687, 24.8948]);
+
+// 2. Load the collection, filter by date, select band(s), apply scale & masks.
+var collection = ee.ImageCollection('UCSB-CHG/CHIRPS/DAILY')
+    .filterDate('2024-01-01', '2024-12-31')
+    .select(['precipitation'])
+
+  .map(function(img) {
+    
+    var scaled = img.select('precipitation').multiply(1).add(0);
+    
+    
+    return scaled.rename('value').copyProperties(img, ['system:time_start']);
+  })
+
+// 3. Apply temporal aggregation.
+var aggColl = collection;
+
+// 4. Export / chart.
+var chart = ui.Chart.image.seriesByRegion({
+  imageCollection: aggColl,
+  regions: geometry,
+  reducer: ee.Reducer.mean(),
+  scale: 5566,
+  xProperty: 'system:time_start'
+});
+print(chart);
+// Y-axis units: mm/day. Values already have scale 1 applied.
+
+// End of HeraOculus GEE script."
+`;
+
+exports[`generateJsScript > ERA5-Land temp_air snapshot 1`] = `
+"// HeraOculus → Google Earth Engine (Code Editor) JavaScript
+// Generated automatically. Run this in your own GEE Code Editor.
+// Geo-Iris/HeraOculus does not execute, store, or transmit this code.
+// Dataset: ERA5-Land Daily Aggregated — 2 m Temperature
+// eeCollectionId: ECMWF/ERA5_LAND/DAILY_AGGR | band: temperature_2m | scale: 1 | units: K
+// Native resolution: 11132 m | reducer: mean
+// Region: {"kind":"point","lat":24.8948,"lon":91.8687}
+// Date range: 2024-01-01 to 2024-12-31
+// Variable: temp_air | export target: chart
+// Geometry uses [lon, lat] ordering as required by Earth Engine.
+
+// Daily aggregate (1950–present, ~3-month latency).
+// Already in Kelvin, no scale factor.
+// °C = K − 273.15.
+// Land-only grid..
+
+// Coverage: Global land (90°S–90°N).
+
+// 1. Define the geometry from the HeraOculus selection.
+var geometry = ee.Point([91.8687, 24.8948]);
+
+// 2. Load the collection, filter by date, select band(s), apply scale & masks.
+var collection = ee.ImageCollection('ECMWF/ERA5_LAND/DAILY_AGGR')
+    .filterDate('2024-01-01', '2024-12-31')
+    .select(['temperature_2m'])
+
+  .map(function(img) {
+    
+    var scaled = img.select('temperature_2m').multiply(1).add(0);
+    
+    
+    return scaled.rename('value').copyProperties(img, ['system:time_start']);
+  })
+
+// 3. Apply temporal aggregation.
+var aggColl = collection;
+
+// 4. Export / chart.
+var chart = ui.Chart.image.seriesByRegion({
+  imageCollection: aggColl,
+  regions: geometry,
+  reducer: ee.Reducer.mean(),
+  scale: 11132,
+  xProperty: 'system:time_start'
+});
+print(chart);
+// Y-axis units: K. Values already have scale 1 applied.
+
+// End of HeraOculus GEE script."
+`;
+
+exports[`generateJsScript > IMERG precip snapshot 1`] = `
+"// HeraOculus → Google Earth Engine (Code Editor) JavaScript
+// Generated automatically. Run this in your own GEE Code Editor.
+// Geo-Iris/HeraOculus does not execute, store, or transmit this code.
+// Dataset: GPM IMERG Final V07 — Precipitation
+// eeCollectionId: NASA/GPM_L3/IMERG_V07 | band: precipitation | scale: 1 | units: mm/hr
+// Native resolution: 11132 m | reducer: mean
+// Region: {"kind":"point","lat":24.8948,"lon":91.8687}
+// Date range: 2024-01-01 to 2024-12-31
+// Variable: precip | export target: chart
+// Geometry uses [lon, lat] ordering as required by Earth Engine.
+
+// Half-hourly, global 0.1°.
+// Units mm/hr.
+// Final-run products transitioned to V08 after 2025-09-30; check provisional/permanent status for your date range..
+
+// Coverage: Global (90°S–90°N).
+
+// 1. Define the geometry from the HeraOculus selection.
+var geometry = ee.Point([91.8687, 24.8948]);
+
+// 2. Load the collection, filter by date, select band(s), apply scale & masks.
+var collection = ee.ImageCollection('NASA/GPM_L3/IMERG_V07')
+    .filterDate('2024-01-01', '2024-12-31')
+    .select(['precipitation'])
+
+  .map(function(img) {
+    
+    var scaled = img.select('precipitation').multiply(1).add(0);
+    
+    
+    return scaled.rename('value').copyProperties(img, ['system:time_start']);
+  })
+
+// 3. Apply temporal aggregation.
+var aggColl = collection;
+
+// 4. Export / chart.
+var chart = ui.Chart.image.seriesByRegion({
+  imageCollection: aggColl,
+  regions: geometry,
+  reducer: ee.Reducer.mean(),
+  scale: 11132,
+  xProperty: 'system:time_start'
+});
+print(chart);
+// Y-axis units: mm/hr. Values already have scale 1 applied.
+
+// End of HeraOculus GEE script."
+`;
+
+exports[`generateJsScript > MODIS EVI snapshot 1`] = `
+"// HeraOculus → Google Earth Engine (Code Editor) JavaScript
+// Generated automatically. Run this in your own GEE Code Editor.
+// Geo-Iris/HeraOculus does not execute, store, or transmit this code.
+// Dataset: MODIS Terra Vegetation Indices (MOD13Q1 V6.1) — EVI
+// eeCollectionId: MODIS/061/MOD13Q1 | band: EVI | scale: 0.0001 | units: index (0–1)
+// Native resolution: 250 m | reducer: mean
+// Region: {"kind":"point","lat":24.8948,"lon":91.8687}
+// Date range: 2024-01-01 to 2024-12-31
+// Variable: evi | export target: chart
+// Geometry uses [lon, lat] ordering as required by Earth Engine.
+
+// 16-day composite, 250 m.
+// Apply scale factor 0.0001.
+// Valid raw range -2000..10000; values outside that range are fill/no-data.
+// V0.61 (061); V0.06 decommissioned 2023-07-31..
+
+// 1. Define the geometry from the HeraOculus selection.
+var geometry = ee.Point([91.8687, 24.8948]);
+
+// 2. Load the collection, filter by date, select band(s), apply scale & masks.
+var collection = ee.ImageCollection('MODIS/061/MOD13Q1')
+    .filterDate('2024-01-01', '2024-12-31')
+    .select(['EVI'])
+
+  .map(function(img) {
+    
+    var scaled = img.select('EVI').multiply(0.0001).add(0);
+    
+    
+    return scaled.rename('value').copyProperties(img, ['system:time_start']);
+  })
+
+// 3. Apply temporal aggregation.
+var aggColl = collection;
+
+// 4. Export / chart.
+var chart = ui.Chart.image.seriesByRegion({
+  imageCollection: aggColl,
+  regions: geometry,
+  reducer: ee.Reducer.mean(),
+  scale: 250,
+  xProperty: 'system:time_start'
+});
+print(chart);
+// Y-axis units: index (0–1). Values already have scale 0.0001 applied.
+
+// End of HeraOculus GEE script."
+`;
+
+exports[`generateJsScript > MODIS LST night snapshot 1`] = `
+"// HeraOculus → Google Earth Engine (Code Editor) JavaScript
+// Generated automatically. Run this in your own GEE Code Editor.
+// Geo-Iris/HeraOculus does not execute, store, or transmit this code.
+// Dataset: MODIS Terra LST & Emissivity (MOD11A1 V6.1) — Nighttime LST
+// eeCollectionId: MODIS/061/MOD11A1 | band: LST_Night_1km | scale: 0.02 | units: K
+// Native resolution: 1000 m | reducer: mean
+// Region: {"kind":"point","lat":24.8948,"lon":91.8687}
+// Date range: 2024-01-01 to 2024-12-31
+// Variable: lst_night | export target: chart
+// Geometry uses [lon, lat] ordering as required by Earth Engine.
+
+// Daily, 1 km.
+// Apply scale 0.02 → Kelvin.
+// Raw fill value is 0; valid range 7500..65535.
+// Mask raw < 7500 as no-data.
+// °C = K − 273.15.
+// Clear-sky only; above 30° latitude multiple observations may be averaged.
+// V0.61 (061); V0.06 decommissioned 2023-07-31..
+
+// 1. Define the geometry from the HeraOculus selection.
+var geometry = ee.Point([91.8687, 24.8948]);
+
+// 2. Load the collection, filter by date, select band(s), apply scale & masks.
+var collection = ee.ImageCollection('MODIS/061/MOD11A1')
+    .filterDate('2024-01-01', '2024-12-31')
+    .select(['LST_Night_1km'])
+
+  .map(function(img) {
+    
+    var scaled = img.select('LST_Night_1km').multiply(0.02).add(0);
+    
+    
+    scaled = scaled.updateMask(img.gte(7500));
+    return scaled.rename('value').copyProperties(img, ['system:time_start']);
+  })
+
+// 3. Apply temporal aggregation.
+var aggColl = collection;
+
+// 4. Export / chart.
+var chart = ui.Chart.image.seriesByRegion({
+  imageCollection: aggColl,
+  regions: geometry,
+  reducer: ee.Reducer.mean(),
+  scale: 1000,
+  xProperty: 'system:time_start'
+});
+print(chart);
+// Y-axis units: K. Values already have scale 0.02 applied.
+
+// End of HeraOculus GEE script."
+`;
+
+exports[`generateJsScript > MODIS NDVI chart snapshot 1`] = `
+"// HeraOculus → Google Earth Engine (Code Editor) JavaScript
+// Generated automatically. Run this in your own GEE Code Editor.
+// Geo-Iris/HeraOculus does not execute, store, or transmit this code.
+// Dataset: MODIS Terra Vegetation Indices (MOD13Q1 V6.1) — NDVI
+// eeCollectionId: MODIS/061/MOD13Q1 | band: NDVI | scale: 0.0001 | units: index (0–1)
+// Native resolution: 250 m | reducer: mean
+// Region: {"kind":"point","lat":24.8948,"lon":91.8687}
+// Date range: 2024-01-01 to 2024-12-31
+// Variable: ndvi | export target: chart
+// Geometry uses [lon, lat] ordering as required by Earth Engine.
+
+// 16-day composite, 250 m.
+// Apply scale factor 0.0001.
+// Valid raw range -2000..10000; values outside that range are fill/no-data.
+// Use SummaryQA/DetailedQA for quality filtering if needed.
+// V0.06 (006) was decommissioned 2023-07-31; this map uses V0.61 (061)..
+
+// 1. Define the geometry from the HeraOculus selection.
+var geometry = ee.Point([91.8687, 24.8948]);
+
+// 2. Load the collection, filter by date, select band(s), apply scale & masks.
+var collection = ee.ImageCollection('MODIS/061/MOD13Q1')
+    .filterDate('2024-01-01', '2024-12-31')
+    .select(['NDVI'])
+
+  .map(function(img) {
+    
+    var scaled = img.select('NDVI').multiply(0.0001).add(0);
+    
+    
+    return scaled.rename('value').copyProperties(img, ['system:time_start']);
+  })
+
+// 3. Apply temporal aggregation.
+var aggColl = collection;
+
+// 4. Export / chart.
+var chart = ui.Chart.image.seriesByRegion({
+  imageCollection: aggColl,
+  regions: geometry,
+  reducer: ee.Reducer.mean(),
+  scale: 250,
+  xProperty: 'system:time_start'
+});
+print(chart);
+// Y-axis units: index (0–1). Values already have scale 0.0001 applied.
+
+// End of HeraOculus GEE script."
+`;
+
+exports[`generateJsScript > Sentinel-2 NDVI (computed expression) snapshot 1`] = `
+"// HeraOculus → Google Earth Engine (Code Editor) JavaScript
+// Generated automatically. Run this in your own GEE Code Editor.
+// Geo-Iris/HeraOculus does not execute, store, or transmit this code.
+// Dataset: Sentinel-2 MSI Level-2A SR (Harmonized) — NDVI (B8−B4)/(B8+B4)
+// eeCollectionId: COPERNICUS/S2_SR_HARMONIZED | band: B8 | scale: 0.0001 | units: index (0–1)
+// Native resolution: 10 m | reducer: mean
+// Region: {"kind":"point","lat":24.8948,"lon":91.8687}
+// Date range: 2024-01-01 to 2024-12-31
+// Variable: ndvi | export target: chart
+// Geometry uses [lon, lat] ordering as required by Earth Engine.
+
+// NDVI computed from NIR (B8) and red (B4) surface reflectance.
+// The 0.0001 scale cancels in the ratio, so bands are used unscaled.
+// Basic QA60 cloud mask applied (approximate; harmonized collection reconstructs QA60 from 2024-02-28).
+// 10 m resolution, 5-day revisit.
+// L2 coverage 2017-2018 is not yet global..
+
+// 1. Define the geometry from the HeraOculus selection.
+var geometry = ee.Point([91.8687, 24.8948]);
+
+// 2. Load the collection, filter by date, select band(s), apply scale & masks.
+var collection = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+    .filterDate('2024-01-01', '2024-12-31')
+    .select(['B8', 'B4', 'QA60'])
+
+  .map(function(img) {
+    
+    var scaled = img.expression("(b8 - b4) / (b8 + b4)", {b8: img.select('B8'), b4: img.select('B4')});
+    
+    var qa = img.select('QA60');
+    var cloudBitMask = 1 << 10;
+    var cloudMask = qa.bitwiseAnd(cloudBitMask).eq(0);
+    scaled = scaled.updateMask(cloudMask);
+    
+    return scaled.rename('value').copyProperties(img, ['system:time_start']);
+  })
+
+// 3. Apply temporal aggregation.
+var aggColl = collection;
+
+// 4. Export / chart.
+var chart = ui.Chart.image.seriesByRegion({
+  imageCollection: aggColl,
+  regions: geometry,
+  reducer: ee.Reducer.mean(),
+  scale: 10,
+  xProperty: 'system:time_start'
+});
+print(chart);
+// Y-axis units: index (0–1). Values already have scale 0.0001 applied.
+
+// End of HeraOculus GEE script."
+`;
+
+exports[`generateJsScript > annual aggregation + GeoTIFF to Drive snapshot 1`] = `
+"// HeraOculus → Google Earth Engine (Code Editor) JavaScript
+// Generated automatically. Run this in your own GEE Code Editor.
+// Geo-Iris/HeraOculus does not execute, store, or transmit this code.
+// Dataset: MODIS Terra LST & Emissivity (MOD11A1 V6.1) — Daytime LST
+// eeCollectionId: MODIS/061/MOD11A1 | band: LST_Day_1km | scale: 0.02 | units: K
+// Native resolution: 1000 m | reducer: mean
+// Region: {"kind":"point","lat":24.8948,"lon":91.8687}
+// Date range: 2024-01-01 to 2024-12-31
+// Variable: lst_day | export target: geotiff-drive
+// Geometry uses [lon, lat] ordering as required by Earth Engine.
+
+// Daily, 1 km.
+// Apply scale 0.02 → Kelvin.
+// Raw fill value is 0; valid range 7500..65535.
+// Mask raw < 7500 as no-data.
+// °C = K − 273.15.
+// Clear-sky only; above 30° latitude multiple observations may be averaged.
+// V0.61 (061); V0.06 decommissioned 2023-07-31..
+
+// 1. Define the geometry from the HeraOculus selection.
+var geometry = ee.Point([91.8687, 24.8948]);
+
+// 2. Load the collection, filter by date, select band(s), apply scale & masks.
+var collection = ee.ImageCollection('MODIS/061/MOD11A1')
+    .filterDate('2024-01-01', '2024-12-31')
+    .select(['LST_Day_1km'])
+
+  .map(function(img) {
+    
+    var scaled = img.select('LST_Day_1km').multiply(0.02).add(0);
+    
+    
+    scaled = scaled.updateMask(img.gte(7500));
+    return scaled.rename('value').copyProperties(img, ['system:time_start']);
+  })
+
+// 3. Apply temporal aggregation.
+
+// Aggregate to annual means.
+aggColl = ee.ImageCollection.fromImages(
+  years.map(function(y) {
+    var c = collection
+      .filter(ee.Filter.calendarRange(y, y, 'year'));
+    return c.mean().set('system:time_start', ee.Date.fromYMD(y, 1, 1));
+  })
+);
+
+// 4. Export / chart.
+var image = aggColl.mean().clip(geometry);
+Export.image.toDrive({
+  image: image,
+  description: 'HeraOculus_lst_day_2024-01-01_2024-12-31',
+  scale: 1000,
+  region: geometry,
+  maxPixels: 1e9
+});
+
+// End of HeraOculus GEE script."
+`;
+
+exports[`generateJsScript > area-mean bbox snapshot 1`] = `
+"// HeraOculus → Google Earth Engine (Code Editor) JavaScript
+// Generated automatically. Run this in your own GEE Code Editor.
+// Geo-Iris/HeraOculus does not execute, store, or transmit this code.
+// Dataset: MODIS Terra Vegetation Indices (MOD13Q1 V6.1) — NDVI
+// eeCollectionId: MODIS/061/MOD13Q1 | band: NDVI | scale: 0.0001 | units: index (0–1)
+// Native resolution: 250 m | reducer: mean
+// Region: {"kind":"bbox","west":91.8,"south":24.8,"east":91.9,"north":25}
+// Date range: 2024-01-01 to 2024-12-31
+// Variable: ndvi | export target: chart
+// Geometry uses [lon, lat] ordering as required by Earth Engine.
+
+// 16-day composite, 250 m.
+// Apply scale factor 0.0001.
+// Valid raw range -2000..10000; values outside that range are fill/no-data.
+// Use SummaryQA/DetailedQA for quality filtering if needed.
+// V0.06 (006) was decommissioned 2023-07-31; this map uses V0.61 (061)..
+
+// 1. Define the geometry from the HeraOculus selection.
+var geometry = ee.Rectangle([91.8, 24.8, 91.9, 25]);
+
+// 2. Load the collection, filter by date, select band(s), apply scale & masks.
+var collection = ee.ImageCollection('MODIS/061/MOD13Q1')
+    .filterDate('2024-01-01', '2024-12-31')
+    .select(['NDVI'])
+
+  .map(function(img) {
+    
+    var scaled = img.select('NDVI').multiply(0.0001).add(0);
+    
+    
+    return scaled.rename('value').copyProperties(img, ['system:time_start']);
+  })
+
+// 3. Apply temporal aggregation.
+var aggColl = collection;
+
+// 4. Export / chart.
+var chart = ui.Chart.image.seriesByRegion({
+  imageCollection: aggColl,
+  regions: geometry,
+  reducer: ee.Reducer.mean(),
+  scale: 250,
+  xProperty: 'system:time_start'
+});
+print(chart);
+// Y-axis units: index (0–1). Values already have scale 0.0001 applied.
+
+// End of HeraOculus GEE script."
+`;
+
+exports[`generateJsScript > monthly aggregation + CSV to Drive snapshot 1`] = `
+"// HeraOculus → Google Earth Engine (Code Editor) JavaScript
+// Generated automatically. Run this in your own GEE Code Editor.
+// Geo-Iris/HeraOculus does not execute, store, or transmit this code.
+// Dataset: CHIRPS Daily Precipitation (V2 Final)
+// eeCollectionId: UCSB-CHG/CHIRPS/DAILY | band: precipitation | scale: 1 | units: mm/day
+// Native resolution: 5566 m | reducer: mean
+// Region: {"kind":"point","lat":24.8948,"lon":91.8687}
+// Date range: 2024-01-01 to 2024-12-31
+// Variable: precip | export target: csv-drive
+// Geometry uses [lon, lat] ordering as required by Earth Engine.
+
+// Daily precipitation, quasi-global (60°S–60°N), ~0.05° (~5.6 km).
+// No scale factor (raw values already in mm/day).
+// For monthly totals, sum daily values; for annual, sum then divide by years as needed..
+
+// 1. Define the geometry from the HeraOculus selection.
+var geometry = ee.Point([91.8687, 24.8948]);
+
+// 2. Load the collection, filter by date, select band(s), apply scale & masks.
+var collection = ee.ImageCollection('UCSB-CHG/CHIRPS/DAILY')
+    .filterDate('2024-01-01', '2024-12-31')
+    .select(['precipitation'])
+
+  .map(function(img) {
+    
+    var scaled = img.select('precipitation').multiply(1).add(0);
+    
+    
+    return scaled.rename('value').copyProperties(img, ['system:time_start']);
+  })
+
+// 3. Apply temporal aggregation.
+
+// Aggregate to monthly means.
+var years = ee.List.sequence(2024, 2024);
+var months = ee.List.sequence(1, 12);
+aggColl = ee.ImageCollection.fromImages(
+  years.map(function(y) {
+    return months.map(function(m) {
+      var c = collection
+        .filter(ee.Filter.calendarRange(y, y, 'year'))
+        .filter(ee.Filter.calendarRange(m, m, 'month'));
+      return c.mean().set('system:time_start', ee.Date.fromYMD(y, m, 1));
+    });
+  }).flatten()
+);
+
+// 4. Export / chart.
+var features = aggColl.map(function(img) {
+  var val = img.reduceRegion({
+    reducer: ee.Reducer.mean(),
+    geometry: geometry,
+    scale: 5566,
+    maxPixels: 1e9,
+    bestEffort: true
+  });
+  return ee.Feature(null, {
+    date: img.date().format('YYYY-MM-dd'),
+    value: val.get('value')
+  });
+});
+var fc = ee.FeatureCollection(features);
+Export.table.toDrive({
+  collection: fc,
+  description: 'HeraOculus_precip_2024-01-01_2024-12-31',
+  fileFormat: 'CSV'
+});
+
+// End of HeraOculus GEE script."
+`;
+
+exports[`generatePythonScript > CSV to Drive snapshot 1`] = `
+"# HeraOculus → Google Earth Engine (Python / earthengine-api)
+# Generated automatically. Run this in your own Python environment.
+# HeraOculus does not execute, store, or transmit this code.
+# Dataset: CHIRPS Daily Precipitation (V2 Final)
+# eeCollectionId: UCSB-CHG/CHIRPS/DAILY | band: precipitation | scale: 1 | units: mm/day
+# Native resolution: 5566 m | reducer: mean
+# Region: {"kind":"point","lat":24.8948,"lon":91.8687}
+# Date range: 2024-01-01 to 2024-12-31
+# Variable: precip | export target: csv-drive
+# Geometry uses [lon, lat] ordering as required by Earth Engine.
+
+# Daily precipitation, quasi-global (60°S–60°N), ~0.05° (~5.6 km).
+# No scale factor (raw values already in mm/day).
+# For monthly totals, sum daily values; for annual, sum then divide by years as needed..
+
+# 1. Authenticate in your own environment before running:
+#   ee.Authenticate()
+#   ee.Initialize(project='YOUR_GEE_PROJECT_ID')
+# 2. Define the geometry from the HeraOculus selection.
+geometry = ee.Point([91.8687, 24.8948])
+
+# 3. Load the collection, filter by date, select band(s), apply scale & masks.
+
+def scale_and_mask(img):
+    
+    scaled = img.select("precipitation").multiply(1).add(0)
+    
+    
+    return scaled.rename('value').copyProperties(img, ['system:time_start'])
+
+collection = (ee.ImageCollection('UCSB-CHG/CHIRPS/DAILY')
+    .filterDate('2024-01-01', '2024-12-31')
+    .select(["precipitation"])
+    .map(scale_and_mask)
+)
+
+# 4. Apply temporal aggregation.
+aggColl = collection
+
+# 5. Export / chart (earthengine-api has no ui.Chart; export CSV/TIFF).
+def reduce_image(img):
+    val = img.reduceRegion(
+        reducer=ee.Reducer.mean(),
+        geometry=geometry,
+        scale=5566,
+        maxPixels=1e9,
+        bestEffort=True
+    )
+    return ee.Feature(None, {
+        'date': img.date().format('YYYY-MM-dd'),
+        'value': val.get('value')
+    })
+features = aggColl.map(reduce_image)
+fc = ee.FeatureCollection(features)
+Export.table.toDrive(
+    collection=fc,
+    description='HeraOculus_precip_2024-01-01_2024-12-31',
+    fileFormat='CSV'
+)
+
+# End of HeraOculus GEE script."
+`;
+
+exports[`generatePythonScript > ERA5-Land temp_air snapshot 1`] = `
+"# HeraOculus → Google Earth Engine (Python / earthengine-api)
+# Generated automatically. Run this in your own Python environment.
+# HeraOculus does not execute, store, or transmit this code.
+# Dataset: ERA5-Land Daily Aggregated — 2 m Temperature
+# eeCollectionId: ECMWF/ERA5_LAND/DAILY_AGGR | band: temperature_2m | scale: 1 | units: K
+# Native resolution: 11132 m | reducer: mean
+# Region: {"kind":"point","lat":24.8948,"lon":91.8687}
+# Date range: 2024-01-01 to 2024-12-31
+# Variable: temp_air | export target: chart
+# Geometry uses [lon, lat] ordering as required by Earth Engine.
+
+# Daily aggregate (1950–present, ~3-month latency).
+# Already in Kelvin, no scale factor.
+# °C = K − 273.15.
+# Land-only grid..
+
+# Coverage: Global land (90°S–90°N).
+
+# 1. Authenticate in your own environment before running:
+#   ee.Authenticate()
+#   ee.Initialize(project='YOUR_GEE_PROJECT_ID')
+# 2. Define the geometry from the HeraOculus selection.
+geometry = ee.Point([91.8687, 24.8948])
+
+# 3. Load the collection, filter by date, select band(s), apply scale & masks.
+
+def scale_and_mask(img):
+    
+    scaled = img.select("temperature_2m").multiply(1).add(0)
+    
+    
+    return scaled.rename('value').copyProperties(img, ['system:time_start'])
+
+collection = (ee.ImageCollection('ECMWF/ERA5_LAND/DAILY_AGGR')
+    .filterDate('2024-01-01', '2024-12-31')
+    .select(["temperature_2m"])
+    .map(scale_and_mask)
+)
+
+# 4. Apply temporal aggregation.
+aggColl = collection
+
+# 5. Export / chart (earthengine-api has no ui.Chart; export CSV/TIFF).
+def reduce_image(img):
+    val = img.reduceRegion(
+        reducer=ee.Reducer.mean(),
+        geometry=geometry,
+        scale=11132,
+        maxPixels=1e9,
+        bestEffort=True
+    )
+    return ee.Feature(None, {
+        'date': img.date().format('YYYY-MM-dd'),
+        'value': val.get('value')
+    })
+features = aggColl.map(reduce_image)
+fc = ee.FeatureCollection(features)
+Export.table.toDrive(
+    collection=fc,
+    description='HeraOculus_temp_air_2024-01-01_2024-12-31',
+    fileFormat='CSV'
+)
+# Note: open the exported CSV to chart; units are K (scale 1 applied).
+
+# End of HeraOculus GEE script."
+`;
+
+exports[`generatePythonScript > IMERG precip snapshot 1`] = `
+"# HeraOculus → Google Earth Engine (Python / earthengine-api)
+# Generated automatically. Run this in your own Python environment.
+# HeraOculus does not execute, store, or transmit this code.
+# Dataset: GPM IMERG Final V07 — Precipitation
+# eeCollectionId: NASA/GPM_L3/IMERG_V07 | band: precipitation | scale: 1 | units: mm/hr
+# Native resolution: 11132 m | reducer: mean
+# Region: {"kind":"point","lat":24.8948,"lon":91.8687}
+# Date range: 2024-01-01 to 2024-12-31
+# Variable: precip | export target: chart
+# Geometry uses [lon, lat] ordering as required by Earth Engine.
+
+# Half-hourly, global 0.1°.
+# Units mm/hr.
+# Final-run products transitioned to V08 after 2025-09-30; check provisional/permanent status for your date range..
+
+# Coverage: Global (90°S–90°N).
+
+# 1. Authenticate in your own environment before running:
+#   ee.Authenticate()
+#   ee.Initialize(project='YOUR_GEE_PROJECT_ID')
+# 2. Define the geometry from the HeraOculus selection.
+geometry = ee.Point([91.8687, 24.8948])
+
+# 3. Load the collection, filter by date, select band(s), apply scale & masks.
+
+def scale_and_mask(img):
+    
+    scaled = img.select("precipitation").multiply(1).add(0)
+    
+    
+    return scaled.rename('value').copyProperties(img, ['system:time_start'])
+
+collection = (ee.ImageCollection('NASA/GPM_L3/IMERG_V07')
+    .filterDate('2024-01-01', '2024-12-31')
+    .select(["precipitation"])
+    .map(scale_and_mask)
+)
+
+# 4. Apply temporal aggregation.
+aggColl = collection
+
+# 5. Export / chart (earthengine-api has no ui.Chart; export CSV/TIFF).
+def reduce_image(img):
+    val = img.reduceRegion(
+        reducer=ee.Reducer.mean(),
+        geometry=geometry,
+        scale=11132,
+        maxPixels=1e9,
+        bestEffort=True
+    )
+    return ee.Feature(None, {
+        'date': img.date().format('YYYY-MM-dd'),
+        'value': val.get('value')
+    })
+features = aggColl.map(reduce_image)
+fc = ee.FeatureCollection(features)
+Export.table.toDrive(
+    collection=fc,
+    description='HeraOculus_precip_2024-01-01_2024-12-31',
+    fileFormat='CSV'
+)
+# Note: open the exported CSV to chart; units are mm/hr (scale 1 applied).
+
+# End of HeraOculus GEE script."
+`;
+
+exports[`generatePythonScript > MODIS NDVI chart snapshot 1`] = `
+"# HeraOculus → Google Earth Engine (Python / earthengine-api)
+# Generated automatically. Run this in your own Python environment.
+# HeraOculus does not execute, store, or transmit this code.
+# Dataset: MODIS Terra Vegetation Indices (MOD13Q1 V6.1) — NDVI
+# eeCollectionId: MODIS/061/MOD13Q1 | band: NDVI | scale: 0.0001 | units: index (0–1)
+# Native resolution: 250 m | reducer: mean
+# Region: {"kind":"point","lat":24.8948,"lon":91.8687}
+# Date range: 2024-01-01 to 2024-12-31
+# Variable: ndvi | export target: chart
+# Geometry uses [lon, lat] ordering as required by Earth Engine.
+
+# 16-day composite, 250 m.
+# Apply scale factor 0.0001.
+# Valid raw range -2000..10000; values outside that range are fill/no-data.
+# Use SummaryQA/DetailedQA for quality filtering if needed.
+# V0.06 (006) was decommissioned 2023-07-31; this map uses V0.61 (061)..
+
+# 1. Authenticate in your own environment before running:
+#   ee.Authenticate()
+#   ee.Initialize(project='YOUR_GEE_PROJECT_ID')
+# 2. Define the geometry from the HeraOculus selection.
+geometry = ee.Point([91.8687, 24.8948])
+
+# 3. Load the collection, filter by date, select band(s), apply scale & masks.
+
+def scale_and_mask(img):
+    
+    scaled = img.select("NDVI").multiply(0.0001).add(0)
+    
+    
+    return scaled.rename('value').copyProperties(img, ['system:time_start'])
+
+collection = (ee.ImageCollection('MODIS/061/MOD13Q1')
+    .filterDate('2024-01-01', '2024-12-31')
+    .select(["NDVI"])
+    .map(scale_and_mask)
+)
+
+# 4. Apply temporal aggregation.
+aggColl = collection
+
+# 5. Export / chart (earthengine-api has no ui.Chart; export CSV/TIFF).
+def reduce_image(img):
+    val = img.reduceRegion(
+        reducer=ee.Reducer.mean(),
+        geometry=geometry,
+        scale=250,
+        maxPixels=1e9,
+        bestEffort=True
+    )
+    return ee.Feature(None, {
+        'date': img.date().format('YYYY-MM-dd'),
+        'value': val.get('value')
+    })
+features = aggColl.map(reduce_image)
+fc = ee.FeatureCollection(features)
+Export.table.toDrive(
+    collection=fc,
+    description='HeraOculus_ndvi_2024-01-01_2024-12-31',
+    fileFormat='CSV'
+)
+# Note: open the exported CSV to chart; units are index (0–1) (scale 0.0001 applied).
+
+# End of HeraOculus GEE script."
+`;

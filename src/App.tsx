@@ -33,7 +33,9 @@ import { RegionalContrastView } from './components/RegionalContrastView';
 import { VariableEncyclopedia } from './components/VariableEncyclopedia';
 import { CustomDataUploader } from './components/CustomDataUploader';
 import { DataExportModal } from './components/DataExportModal';
+import { GeeScriptModal } from './components/GeeScriptModal';
 import type { Phase2SeriesHandoff } from './services/phase2Api';
+import { hasGeeSupport } from './services/gee/datasetMap';
 
 const StatisticalLab = React.lazy(() => import('./components/StatisticalLab/StatisticalLab'));
 const Phase2Lab = React.lazy(() =>
@@ -55,7 +57,8 @@ import {
   ExternalLink,
   BookOpen,
   Cpu,
-  AlertCircle
+  AlertCircle,
+  Code2
 } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -77,6 +80,20 @@ export const App: React.FC = () => {
   const [requestedRange, setRequestedRange] = useState<string | undefined>(undefined);
   const [actualRange, setActualRange] = useState<string | undefined>(undefined);
   const [latestValidObservation, setLatestValidObservation] = useState<string | undefined>(undefined);
+  // GEE script modal state
+  const [isGeeModalOpen, setIsGeeModalOpen] = useState<boolean>(false);
+  const [geeStartDate, setGeeStartDate] = useState<string>('');
+  const [geeEndDate, setGeeEndDate] = useState<string>('');
+
+  // Seed GEE modal dates from the loaded series range when available.
+  React.useEffect(() => {
+    if (!actualRange) return;
+    const m = /^(\d{4})-(\d{4})$/.exec(actualRange);
+    if (!m) return;
+    setGeeStartDate(`${m[1]}-01-01`);
+    setGeeEndDate(`${m[2]}-12-31`);
+  }, [actualRange]);
+
   const [phase2Handoff, setPhase2Handoff] = useState<Phase2SeriesHandoff | null>(null);
   
   // Race-condition guards for async requests
@@ -611,6 +628,22 @@ export const App: React.FC = () => {
                   loadingMessage={loadingMessage}
                   loadingElapsedSeconds={loadingElapsed}
                 />
+
+                {hasGeeSupport(selectedVariable.id as VariableId) && (
+                  <div className="mt-4 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsGeeModalOpen(true)}
+                      className="inline-flex items-center space-x-2 px-3.5 py-2 rounded-xl border border-ink-700 bg-ink-900 hover:bg-ink-800 text-xs font-semibold text-silver-100 transition-colors cursor-pointer"
+                    >
+                      <Code2 className="w-4 h-4 text-gold-400" aria-hidden />
+                      <span>Generate GEE script</span>
+                    </button>
+                    <span className="ml-2 self-center text-[10px] text-silver-500">
+                      Code Editor (JS) • earthengine-api (Python)
+                    </span>
+                  </div>
+                )}
               </section>
 
               {/* Section 4: Statistical Significance Analysis */}
@@ -766,6 +799,16 @@ export const App: React.FC = () => {
         variable={selectedVariable}
         points={activePoints}
         stats={trendStats}
+      />
+
+      {/* GEE Script Generator Modal */}
+      <GeeScriptModal
+        isOpen={isGeeModalOpen}
+        onClose={() => setIsGeeModalOpen(false)}
+        region={selectedRegion}
+        variable={selectedVariable}
+        startDate={geeStartDate}
+        endDate={geeEndDate}
       />
 
       {/* Footer */}
