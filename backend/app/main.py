@@ -1,4 +1,4 @@
-"""Geo-Iris Phase 2 FastAPI application entrypoint."""
+"""HeraOculus Phase 2 FastAPI application entrypoint."""
 
 from __future__ import annotations
 

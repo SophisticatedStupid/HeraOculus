@@ -1,4 +1,4 @@
-"""Cross-validation of Geo-Iris trend / extreme-value implementations.
+"""Cross-validation of HeraOculus trend / extreme-value implementations.
 
 Compares the in-house implementations against independent reference
 implementations:
@@ -143,7 +143,7 @@ _REAL_CO2_URL = (
 def _fetch_mauna_loa_co2(timeout_s: float = 12.0) -> tuple[np.ndarray, np.ndarray] | None:
     """Fetch NOAA Mauna Loa monthly mean CO2. Returns (decimal_year, co2) or None."""
     try:
-        req = urllib.request.Request(_REAL_CO2_URL, headers={"User-Agent": "geo-iris-validation/1.0"})
+        req = urllib.request.Request(_REAL_CO2_URL, headers={"User-Agent": "heraoculus-validation/1.0"})
         with urllib.request.urlopen(req, timeout=timeout_s) as resp:
             raw = resp.read().decode("utf-8", errors="replace")
     except Exception as exc:  # network / DNS / HTTP

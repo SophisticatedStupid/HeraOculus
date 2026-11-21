@@ -71,7 +71,7 @@ def _build_synthetic_firms_response(
     return {
         "provenance": {
             "tier": "synthetic_demo",
-            "source_name": f"Geo-Iris Wildfire Benchmark ({source})",
+            "source_name": f"HeraOculus Wildfire Benchmark ({source})",
             "dataset_id": f"DEMO_{source}",
             "is_live": False,
             "status_message": reason,

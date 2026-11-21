@@ -84,7 +84,7 @@ const navItems: { mode: AppMode; label: string; Icon: LucideIcon }[] = [
   { mode: 'imagery', label: 'Imagery Search', Icon: Image },
 ];
 
-function IrisLogo() {
+function HeraOculusLogo() {
   return (
     <svg
       width="32"
@@ -136,11 +136,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           className="flex items-center space-x-3 text-left"
           onClick={() => handleSelect('explorer')}
         >
-          <IrisLogo />
+          <HeraOculusLogo />
           <div>
             <div className="flex items-center space-x-2">
               <span className="font-display text-xl font-semibold leading-none text-silver-100">
-                Geo<span className="text-gold-400">Iris</span>
+                HeraOculus
               </span>
               <span className="px-1.5 py-0.5 text-[10px] font-medium bg-ink-800 text-silver-300 rounded border border-ink-700">
                 HeraOculus

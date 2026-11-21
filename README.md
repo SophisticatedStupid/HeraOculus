@@ -1,4 +1,4 @@
-# Geo-Iris
+# HeraOculus
 
 Earth observation analytics platform: trend detection, changepoint analysis, extreme-value statistics, raster change detection, and Earthdata/NASA data access.
 
@@ -38,6 +38,9 @@ Earth observation analytics platform: trend detection, changepoint analysis, ext
 - NetCDF4/HDF5 inspect and extract
 - NASA POWER monthly time series (reanalysis: temperature, precipitation, radiation, humidity, wind, etc.)
 - ORNL DAAC MODIS time series (NDVI, EVI, global land)
+- **CHIRPS v3** monthly rainfall (Climate Hazards Center, keyless, 0.05°, 60°S–60°N, 1981–present)
+- **GPM IMERG Final V07B** monthly rainfall (NASA GES DISC, Earthdata login, 0.1°, global, 1998–present)
+- **ERA5-Land** monthly total precipitation (Copernicus CDS / ARCO Zarr mirror, CDS key, 0.1°, global land, 1950–present)
 - USGS NWIS streamflow gauges (United States only)
 - NOAA CO-OPS tide gauge sea level (United States coastal waters only)
 - NASA GIBS WMTS map tiles (true-color, NDVI, snow, LST, SST, global)
@@ -56,8 +59,8 @@ Every data source carries a `provenanceType` that distinguishes live measurement
 
 | Provenance type | Sources | Live data? | Notes |
 |---|---|---|---|
-| `reanalysis_model` | NASA POWER (MERRA-2 / GLDAS / CERES) | Yes (reanalysis) | Global gridded reanalysis, not station measurements |
-| `satellite_observation` | MODIS (NDVI/EVI), GIBS (map tiles), CMR (catalog), STAC (scene catalog + COG asset URLs) | Yes (catalog/tiles; STAC assets are live COG URLs) | GIBS SST layer is `GHRSST_L4_MUR` map tiles; CMR and STAC are metadata/catalog — STAC exposes Cloud-Optimized GeoTIFF asset URLs for direct access |
+| `reanalysis_model` | NASA POWER (MERRA-2 / GLDAS / CERES), ERA5-Land | Yes (reanalysis) | Global gridded reanalysis, not station measurements. ERA5-Land requires a CDS API key / DestinE PAT; CDS access is queue-throttled. |
+| `satellite_observation` | MODIS (NDVI/EVI), GIBS (map tiles), CMR (catalog), STAC (scene catalog + COG asset URLs), CHIRPS v3 (rainfall), GPM IMERG Final (rainfall) | Yes (catalog/tiles; STAC assets are live COG URLs) | GIBS SST layer is `GHRSST_L4_MUR` map tiles; CMR and STAC are metadata/catalog — STAC exposes Cloud-Optimized GeoTIFF asset URLs for direct access. CHIRPS blends satellite estimates with in-situ gauge stations (not pure satellite); IMERG is satellite–gauge merged. |
 | `in_situ_gauge` | USGS NWIS streamflow, NOAA CO-OPS tide gauges | Yes (gauge/station) | United States only |
 | `user_upload` | DEM, SAR, LULC GeoTIFF/NetCDF uploads | N/A (user-provided) | 35 MB limit per file |
 | `synthetic_demo` | Fallback when no live source covers a location | No | Calibrated demonstration data; never masquerades as live |
@@ -197,8 +200,8 @@ npm run test
 
 ```bash
 cd backend
-docker build -t geo-iris-backend .
-docker run -p 8000:8000 --env-file .env geo-iris-backend
+docker build -t heraoculus-backend .
+docker run -p 8000:8000 --env-file .env heraoculus-backend
 ```
 
 ## Testing & validation
@@ -247,6 +250,9 @@ Edit `.env` (backend) for server-side variables. `VITE_BACKEND_URL` is a Vite fr
 - **NASA POWER** is global reanalysis (MERRA-2/GLDAS/CERES), not in-situ measurements. Polar-night and ocean cells return explicit fill values.
 - **USGS streamflow** and **NOAA sea level** are United States only; queries outside their service area return a deterministic fallback (no connector selected), never a masquerading live source.
 - **SST** is not available via NASA POWER time series; only as GIBS map tiles.
+- **CHIRPS v3** covers 60°S–60°N (land); queries outside that band return an explicit unavailable result, never synthetic data.
+- **GPM IMERG Final** requires NASA Earthdata Login credentials on the backend; without them it returns an explicit unavailable result. V07 Final ran through 2025-09 (~3.5–4 month latency).
+- **ERA5-Land** requires a CDS API key or DestinE PAT on the backend; without them it returns an explicit unavailable result. CDS access is queue-throttled; prefer the ARCO Zarr mirror.
 - **CMR** is metadata/catalog search only; it produces no time series.
 - **GIBS** is map-tile visualization only; it produces no time series.
 - **Extreme value analysis** requires explicit dates and observation frequency; without dates, frequency is flagged as unknown and return-period assumptions are not silently inferred.
@@ -277,7 +283,7 @@ Geo-Iris-main/
 │   │   └── ...
 │   ├── services/
 │   │   ├── statistics/          # trend, ANOVA, nonlinear, GEV, bootstrap, PCA
-│   │   ├── connectors/          # 7 EarthData connectors + registry
+│   │   ├── connectors/          # 10 EarthData connectors + registry
 │   │   ├── nasaData.ts          # CSV ingestion, variable definitions
 │   │   └── ...
 │   ├── workers/

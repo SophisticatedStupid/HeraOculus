@@ -16,7 +16,7 @@ interface EarthMapProps {
 const MAP_MAX_ZOOM = 12;
 
 // ArcGIS public basemaps return 2521B "Map data not yet available" tiles beyond z=10 in oceans/Antarctica;
-// World_Imagery serves real imagery through z=12 across all Geo-Iris hotspots and oceans.
+// World_Imagery serves real imagery through z=12 across all HeraOculus hotspots and oceans.
 const BASE_TILE_URLS = {
   dark: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
   darkLabels: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',

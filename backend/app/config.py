@@ -1,4 +1,4 @@
-"""Runtime configuration for the Geo-Iris Phase 2 FastAPI backend."""
+"""Runtime configuration for the HeraOculus Phase 2 FastAPI backend."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ load_dotenv(BACKEND_ROOT / ".env")
 class Settings:
     """Application settings loaded from environment variables and `.env`."""
 
-    app_name: str = "Geo-Iris Phase 2 Scientific Compute & NASA Proxy API"
+    app_name: str = "HeraOculus Phase 2 Scientific Compute & NASA Proxy API"
     version: str = "2.0.0"
     host: str = field(default_factory=lambda: os.getenv("BACKEND_HOST", "127.0.0.1"))
     port: int = field(default_factory=lambda: int(os.getenv("BACKEND_PORT", "8000")))

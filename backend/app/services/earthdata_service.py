@@ -783,7 +783,7 @@ def proxy_appeears_point_task(
         "params": {
             "dates": [{"startDate": start_date, "endDate": end_date}],
             "layers": [{"product": product, "layer": layer}],
-            "coordinates": [{"latitude": lat, "longitude": lon, "id": "geo_iris_point"}],
+            "coordinates": [{"latitude": lat, "longitude": lon, "id": "heraoculus_point"}],
         },
     }
 

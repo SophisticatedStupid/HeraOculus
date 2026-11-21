@@ -1,6 +1,6 @@
 import { defineConfig } from 'vitest/config';
 
-// Vitest configuration for Geo-Iris frontend validation.
+// Vitest configuration for HeraOculus frontend validation.
 // Runs pure logic tests in Node (no DOM required) so the suite is fast and
 // reproducible on Windows and Linux without a browser.
 export default defineConfig({

@@ -1,6 +1,6 @@
-"""API-key authentication for the Geo-Iris backend.
+"""API-key authentication for the HeraOculus backend.
 
-When ``GEOIRIS_API_KEY`` is set, every ``/api/v1/*`` route except
+When ``HERAOCULUS_API_KEY`` is set, every ``/api/v1/*`` route except
 ``/api/v1/health`` requires an ``X-API-Key`` header compared with
 ``secrets.compare_digest``.  When the variable is unset the backend runs in
 dev mode and all requests are allowed (one startup warning is logged).
@@ -17,7 +17,7 @@ from fastapi import Depends, Header, HTTPException, status
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-logger = logging.getLogger("geo_iris.security")
+logger = logging.getLogger("heraoculus.security")
 
 API_KEY_HEADER = "X-API-Key"
 
@@ -25,17 +25,17 @@ API_KEY_HEADER = "X-API-Key"
 limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
 
 # Log exactly once at startup whether auth is enabled.
-if os.getenv("GEOIRIS_API_KEY") is None:
+if os.getenv("HERAOCULUS_API_KEY") is None:
     logger.warning(
-        "GEOIRIS_API_KEY is not set: running in DEV mode without API-key "
-        "authentication. Set GEOIRIS_API_KEY to require X-API-Key on /api/v1/* "
+        "HERAOCULUS_API_KEY is not set: running in DEV mode without API-key "
+        "authentication. Set HERAOCULUS_API_KEY to require X-API-Key on /api/v1/* "
         "(except /api/v1/health)."
     )
 
 
 def _configured_api_key() -> Optional[str]:
     """Return the configured API key, or None when dev mode is active."""
-    return os.getenv("GEOIRIS_API_KEY")
+    return os.getenv("HERAOCULUS_API_KEY")
 
 
 async def require_api_key(
@@ -43,7 +43,7 @@ async def require_api_key(
 ) -> None:
     """FastAPI dependency: enforce X-API-Key when configured, allow all in dev.
 
-    Reads ``GEOIRIS_API_KEY`` per request so tests can flip it via monkeypatch
+    Reads ``HERAOCULUS_API_KEY`` per request so tests can flip it via monkeypatch
     without re-importing the application.
     """
     expected = _configured_api_key()

@@ -29,7 +29,7 @@ def test_netcdf_inspect_and_extract_roundtrip():
             )
         },
         coords={"time": dates, "lat": lats, "lon": lons},
-        attrs={"title": "Geo-Iris NetCDF Test Cube"},
+        attrs={"title": "HeraOculus NetCDF Test Cube"},
     )
 
     fd, path = tempfile.mkstemp(suffix=".nc")

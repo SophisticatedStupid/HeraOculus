@@ -17,6 +17,10 @@ import { usgsConnector } from '../src/services/connectors/usgsConnector';
 import { noaaConnector } from '../src/services/connectors/noaaConnector';
 import { cmrConnector } from '../src/services/connectors/cmrConnector';
 import { gibsConnector } from '../src/services/connectors/gibsConnector';
+import { chirpsConnector } from '../src/services/connectors/chirpsConnector';
+import { imergConnector } from '../src/services/connectors/imergConnector';
+import { era5LandConnector } from '../src/services/connectors/era5LandConnector';
+import { smapConnector } from '../src/services/connectors/smapConnector';
 import { analyzeTrendSafe } from '../src/services/statistics';
 import type { TimeSeriesPoint } from '../src/types/earthScience';
 import { describe, expect, it } from 'vitest';
@@ -29,12 +33,16 @@ describe('connector provenance metadata', () => {
     expect(noaaConnector.provenanceType).toBe('in_situ_gauge');
     expect(cmrConnector.provenanceType).toBe('satellite_observation');
     expect(gibsConnector.provenanceType).toBe('satellite_observation');
+    expect(chirpsConnector.provenanceType).toBe('satellite_observation');
+    expect(imergConnector.provenanceType).toBe('satellite_observation');
+    expect(era5LandConnector.provenanceType).toBe('reanalysis_model');
+    expect(smapConnector.provenanceType).toBe('satellite_observation');
   });
 
   it('selected connector provenance matches the variable\'s expected source', () => {
     const cases: Array<[VariableId, number, number, string]> = [
       ['temp_air', 0.0, 0.0, 'reanalysis_model'],
-      ['precip', 0.0, 0.0, 'reanalysis_model'],
+      ['precip', 0.0, 0.0, 'satellite_observation'],
       ['ndvi', 22.0, 78.0, 'satellite_observation'],
       ['evi', 22.0, 78.0, 'satellite_observation'],
       ['streamflow', 38.9, -77.1, 'in_situ_gauge'],

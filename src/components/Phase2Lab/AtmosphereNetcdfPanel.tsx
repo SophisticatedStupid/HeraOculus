@@ -152,7 +152,7 @@ export const AtmosphereNetcdfPanel: React.FC<AtmosphereNetcdfPanelProps> = ({
           lon: appLon,
           start_date: '01-01-2020',
           end_date: '12-31-2024',
-          task_name: 'geo_iris_point_extract',
+          task_name: 'heraoculus_point_extract',
         })
       );
     } catch (err) {

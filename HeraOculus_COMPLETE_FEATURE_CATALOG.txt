@@ -1,5 +1,5 @@
 ================================================================================
-GEO-IRIS / HERAOCULUS — Earth Science Change Detective & Significance Engine
+HERAOCULUS — Earth Science Change Detective & Significance Engine
 Complete Feature & Statistical Analysis Catalog
 ================================================================================
 
@@ -10,7 +10,7 @@ Project Root: D:\Geo-Iris-main\Geo-Iris-main
 1. PROJECT OVERVIEW
 ================================================================================
 
-Project Name: GEOIRIS / HERAOCULUS
+Project Name: HERAOCULUS
 Description: Earth Science Change Detective & Significance Engine
 Architecture: Full-stack web application
   - Frontend: React 19 + TypeScript + Vite + Tailwind CSS v4 (port 3000)
@@ -255,7 +255,7 @@ D:\Geo-Iris-main\Geo-Iris-main\
 ================================================================================
 
 4.1 Application Entry (backend/app/main.py)
-  - FastAPI app: title "Geo-Iris Phase 2 Scientific Compute & NASA Proxy API"
+  - FastAPI app: title "HeraOculus Phase 2 Scientific Compute & NASA Proxy API"
   - Version: 2.0.0
   - CORS middleware: allows localhost:3000, 127.0.0.1:3000, 5173 +
     vercel.app regex pattern

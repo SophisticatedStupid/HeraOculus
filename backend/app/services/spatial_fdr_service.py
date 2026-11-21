@@ -364,7 +364,7 @@ def _render_spatial_png(
     sig_mask: np.ndarray,
     mode: Literal["diverging", "fdr_mask"],
 ) -> str:
-    """Render clean north-up Geo-Iris spatial PNG encoded as base64 data URI."""
+    """Render clean north-up HeraOculus spatial PNG encoded as base64 data URI."""
     H, W = slope_grid.shape
     vmax = max(float(np.percentile(np.abs(slope_grid), 98)), 0.1)
     rgba = np.zeros((H, W, 4), dtype=np.uint8)
@@ -610,7 +610,7 @@ def run_spatial_fdr_analysis(
         "region_name": region_name,
         "provenance": {
             "tier": provenance_tier,
-            "source_name": "Uploaded Spatial Cube" if provenance_tier == "user_upload" else "Geo-Iris Gridded Climate Benchmark Field",
+            "source_name": "Uploaded Spatial Cube" if provenance_tier == "user_upload" else "HeraOculus Gridded Climate Benchmark Field",
             "dataset_id": "SPATIAL_GRID_MK_FDR",
             "is_live": False,
             "status_message": (

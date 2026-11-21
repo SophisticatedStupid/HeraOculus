@@ -1,6 +1,6 @@
 """Read-only service credential resolver backed by environment variables only.
 
-Geo-Iris uses shared service credentials for NASA Earthdata / FIRMS proxies.
+HeraOculus uses shared service credentials for NASA Earthdata / FIRMS proxies.
 There is no per-user credential store: credentials are sourced exclusively from
 environment variables (EARTHDATA_TOKEN, EARTHDATA_USERNAME, EARTHDATA_PASSWORD,
 NASA_FIRMS_MAP_KEY). No endpoint accepts or mutates user-provided secrets.
@@ -25,6 +25,9 @@ class CredentialSnapshot:
     earthdata_username: Optional[str] = None
     earthdata_password: Optional[str] = None
     firms_map_key: Optional[str] = None
+    cds_api_key: Optional[str] = None
+    cdsapi_key: Optional[str] = None
+    destine_pat: Optional[str] = None
 
 
 def _mask_secret(value: Optional[str]) -> Optional[str]:
@@ -51,6 +54,9 @@ class AuthStore:
             earthdata_username=os.getenv("EARTHDATA_USERNAME") or None,
             earthdata_password=os.getenv("EARTHDATA_PASSWORD") or None,
             firms_map_key=os.getenv("NASA_FIRMS_MAP_KEY") or None,
+            cds_api_key=os.getenv("CDS_API_KEY") or None,
+            cdsapi_key=os.getenv("CDSAPI_KEY") or None,
+            destine_pat=os.getenv("DESTINE_PAT") or None,
         )
 
     def get_firms_map_key(self) -> Optional[str]:
@@ -62,6 +68,13 @@ class AuthStore:
     def get_earthdata_credentials(self) -> tuple[Optional[str], Optional[str]]:
         return self._snapshot.earthdata_username, self._snapshot.earthdata_password
 
+    def get_cds_credentials(self) -> Optional[str]:
+        """Return a CDS API key if configured (CDS_API_KEY or CDSAPI_KEY)."""
+        return self._snapshot.cds_api_key or self._snapshot.cdsapi_key
+
+    def get_destine_pat(self) -> Optional[str]:
+        return self._snapshot.destine_pat
+
     def has_earthdata_auth(self) -> bool:
         token = self.get_earthdata_token()
         user, pw = self.get_earthdata_credentials()
@@ -72,6 +85,8 @@ class AuthStore:
         edl_user = self._snapshot.earthdata_username
         edl_pass = self._snapshot.earthdata_password
         firms_key = self._snapshot.firms_map_key
+        cds_key = self.get_cds_credentials()
+        destine_pat = self.get_destine_pat()
 
         edl_source = (
             "environment"
@@ -83,6 +98,8 @@ class AuthStore:
             if firms_key
             else "none"
         )
+        cds_source = "environment" if cds_key else "none"
+        destine_source = "environment" if destine_pat else "none"
 
         return {
             "earthdata_configured": bool(edl_token or (edl_user and edl_pass)),
@@ -92,6 +109,12 @@ class AuthStore:
             "firms_configured": bool(firms_key),
             "firms_source": firms_source,
             "firms_key_hint": _mask_secret(firms_key),
+            "cds_configured": bool(cds_key),
+            "cds_source": cds_source,
+            "cds_key_hint": _mask_secret(cds_key),
+            "destine_configured": bool(destine_pat),
+            "destine_source": destine_source,
+            "destine_pat_hint": _mask_secret(destine_pat),
             "keyless_feeds_available": [
                 "NASA EONET v3 Wildfires & Events",
                 "NASA ASF SAR Granule Search",

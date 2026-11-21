@@ -13,6 +13,8 @@ Datasets
 * ``chirps``   — CHIRPS v3 (Climate Hazards Center), keyless, 0.05°, mm/month
 * ``imerg``    — GPM IMERG Final V07B (GES DISC), NASA Earthdata login, 0.1°
 * ``era5-land``— ERA5-Land (Copernicus CDS / ARCO Zarr mirror), CDS key, 0.1°
+* ``smap``     — SMAP L4 SPL4SMGP V008 (NSIDC / Earthdata Cloud), NASA
+                 Earthdata login, 9 km EASE-Grid 2.0, m³/m³
 
 Missing credentials or an out-of-coverage query yield an explicit
 ``status: "unavailable"`` response — never synthetic data.
@@ -20,9 +22,7 @@ Missing credentials or an out-of-coverage query yield an explicit
 
 from __future__ import annotations
 
-import os
-
-from fastapi import APIRouter, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path
 
 from ..schemas import GriddedSeriesRequest, GriddedSeriesResponse
 from ..security import require_api_key
@@ -31,6 +31,9 @@ from ..services.gridded_climate_service import (
     GriddedUnavailable,
     GriddedUpstreamError,
     fetch_chirps_monthly,
+    fetch_era5_land_monthly,
+    fetch_imerg_monthly,
+    fetch_smap_monthly,
 )
 
 router = APIRouter(
@@ -64,12 +67,12 @@ def gridded_series(
     payload: GriddedSeriesRequest = ...,
 ) -> GriddedSeriesResponse:
     """Return a normalized monthly precipitation series."""
-    if dataset not in ("chirps", "imerg", "era5-land"):
+    if dataset not in ("chirps", "imerg", "era5-land", "smap"):
         raise HTTPException(
             status_code=400,
             detail=(
                 f"Unknown dataset '{dataset}'. "
-                f"Allowed: {', '.join(['chirps', 'imerg', 'era5-land'])}."
+                f"Allowed: {', '.join(['chirps', 'imerg', 'era5-land', 'smap'])}."
             ),
         )
 
@@ -113,19 +116,101 @@ def gridded_series(
         _require_credentials(
             auth_store.has_earthdata_auth(), "imerg", "NASA Earthdata"
         )
-        raise HTTPException(
-            status_code=501,
-            detail="GPM IMERG connector not yet implemented in this build.",
+        try:
+            series = fetch_imerg_monthly(
+                lat=payload.lat,
+                lon=payload.lon,
+                start_year=sy,
+                start_month=sm,
+                end_year=ey,
+                end_month=em,
+                area_mean=payload.area_mean,
+                bbox=tuple(payload.bbox) if payload.bbox else None,
+            )
+        except GriddedUnavailable as exc:
+            return GriddedSeriesResponse(
+                status="unavailable",
+                message=str(exc),
+                series=None,
+            )
+        except GriddedUpstreamError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        return GriddedSeriesResponse(
+            status="available",
+            message=(
+                f"Retrieved {series.valid_count} valid month(s) of IMERG Final "
+                f"({series.missing_count} missing) for {payload.start_date}.."
+                f"{payload.end_date}."
+            ),
+            series=series.to_dict(),
         )
     if dataset == "era5-land":
         _require_credentials(
-            bool(os.getenv("CDS_API_KEY")) or bool(os.getenv("CDSAPI_KEY")),
+            bool(auth_store.get_cds_credentials())
+            or bool(auth_store.get_destine_pat()),
             "era5-land",
-            "Copernicus CDS API",
+            "Copernicus CDS API key or DestinE PAT",
         )
-        raise HTTPException(
-            status_code=501,
-            detail="ERA5-Land connector not yet implemented in this build.",
+        try:
+            series = fetch_era5_land_monthly(
+                lat=payload.lat,
+                lon=payload.lon,
+                start_year=sy,
+                start_month=sm,
+                end_year=ey,
+                end_month=em,
+                area_mean=payload.area_mean,
+                bbox=tuple(payload.bbox) if payload.bbox else None,
+            )
+        except GriddedUnavailable as exc:
+            return GriddedSeriesResponse(
+                status="unavailable",
+                message=str(exc),
+                series=None,
+            )
+        except GriddedUpstreamError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        return GriddedSeriesResponse(
+            status="available",
+            message=(
+                f"Retrieved {series.valid_count} valid month(s) of ERA5-Land "
+                f"({series.missing_count} missing) for {payload.start_date}.."
+                f"{payload.end_date}."
+            ),
+            series=series.to_dict(),
+        )
+    if dataset == "smap":
+        _require_credentials(
+            auth_store.has_earthdata_auth(), "smap", "NASA Earthdata"
+        )
+        try:
+            series = fetch_smap_monthly(
+                lat=payload.lat,
+                lon=payload.lon,
+                start_year=sy,
+                start_month=sm,
+                end_year=ey,
+                end_month=em,
+                variable="sm_rootzone",
+                area_mean=payload.area_mean,
+                bbox=tuple(payload.bbox) if payload.bbox else None,
+            )
+        except GriddedUnavailable as exc:
+            return GriddedSeriesResponse(
+                status="unavailable",
+                message=str(exc),
+                series=None,
+            )
+        except GriddedUpstreamError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        return GriddedSeriesResponse(
+            status="available",
+            message=(
+                f"Retrieved {series.valid_count} valid month(s) of SMAP L4 "
+                f"({series.missing_count} missing) for {payload.start_date}.."
+                f"{payload.end_date}."
+            ),
+            series=series.to_dict(),
         )
 
     raise HTTPException(status_code=400, detail=f"Unknown dataset '{dataset}'.")

@@ -87,7 +87,7 @@ async def read_checked_upload(upload: UploadFile) -> tuple[str, str]:
     safe_name = _safe_upload_name(upload.filename)
     suffix = _safe_suffix(safe_name)
 
-    fd, tmp_path = tempfile.mkstemp(suffix=suffix, prefix="geo_iris_upload_")
+    fd, tmp_path = tempfile.mkstemp(suffix=suffix, prefix="heraoculus_upload_")
 
     total = 0
     try:
@@ -139,7 +139,7 @@ def cleanup_temp_file(path: Optional[str]) -> None:
 # Heavy task execution (process-based, terminable on timeout)
 # ---------------------------------------------------------------------------
 
-_HEAVY_MAX_CONCURRENT = int(os.getenv("GEOIRIS_MAX_CONCURRENT_HEAVY_JOBS", "4"))
+_HEAVY_MAX_CONCURRENT = int(os.getenv("HERAOCULUS_MAX_CONCURRENT_HEAVY_JOBS", "4"))
 _heavy_semaphores: "dict[asyncio.AbstractEventLoop, asyncio.Semaphore]" = {}
 _heavy_semaphores_lock = threading.Lock()
 _active_heavy: "set[mp.Process]" = set()

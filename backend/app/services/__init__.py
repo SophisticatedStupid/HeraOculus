@@ -1,1 +1,1 @@
-"""Service layer modules for Geo-Iris Phase 2."""
+"""Service layer modules for HeraOculus Phase 2."""

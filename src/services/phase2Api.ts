@@ -6,7 +6,7 @@
 
 import type { ProvenanceTier } from '../types/earthScience';
 
-const BACKEND_URL_STORAGE_KEY = 'geo_iris_phase2_backend_url';
+const BACKEND_URL_STORAGE_KEY = 'heraoculus_phase2_backend_url';
 
 export interface BackendProvenance {
   tier: ProvenanceTier;

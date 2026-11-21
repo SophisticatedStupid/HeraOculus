@@ -1,5 +1,5 @@
 /**
- * GEOIRIS Modular Statistics Engine
+ * HERAOCULUS Modular Statistics Engine
  * Exports all statistical modules and maintains 100% backward compatibility with original statistics.ts
  */
 

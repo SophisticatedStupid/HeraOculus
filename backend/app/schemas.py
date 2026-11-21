@@ -1,4 +1,4 @@
-"""Pydantic v2 request and response schemas for Geo-Iris Phase 2 API."""
+"""Pydantic v2 request and response schemas for HeraOculus Phase 2 API."""
 
 from __future__ import annotations
 
@@ -31,6 +31,12 @@ class AuthStatusResponse(BaseModel):
     firms_configured: bool
     firms_source: str
     firms_key_hint: Optional[str] = None
+    cds_configured: bool
+    cds_source: str
+    cds_key_hint: Optional[str] = None
+    destine_configured: bool
+    destine_source: str
+    destine_pat_hint: Optional[str] = None
     keyless_feeds_available: list[str]
 
 
@@ -168,7 +174,7 @@ class AppeearsPointRequest(BaseModel):
     lon: float = Field(default=-60.0, ge=-180.0, le=180.0)
     start_date: str = "01-01-2020"
     end_date: str = "12-31-2024"
-    task_name: str = "geo_iris_point_sample"
+    task_name: str = "heraoculus_point_sample"
 
 
 # ---------------------------------------------------------------------------
@@ -605,7 +611,7 @@ def _parse_iso_datetime(value: str) -> datetime:
 # Gridded climate / reanalysis rainfall schemas
 # ---------------------------------------------------------------------------
 
-GRIDDED_ALLOWED_DATASETS: list[str] = ["chirps", "imerg", "era5-land"]
+GRIDDED_ALLOWED_DATASETS: list[str] = ["chirps", "imerg", "era5-land", "smap"]
 GRIDDED_ALLOWED_VARIABLES: list[str] = ["precip"]
 GRIDDED_MAX_BBOX_AREA_SQ_DEG = 100.0
 GRIDDED_MAX_DATE_SPAN_MONTHS = 40 * 12

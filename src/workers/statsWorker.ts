@@ -1,5 +1,5 @@
 /**
- * GEOIRIS Stats Web Worker
+ * HERAOCULUS Stats Web Worker
  * Offloads heavy statistical computations from the main thread:
  * - Bootstrap confidence intervals (B >= 2000 iterations)
  * - Full Theil-Sen pairwise slopes (O(n^2))

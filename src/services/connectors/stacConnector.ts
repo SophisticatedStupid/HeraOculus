@@ -86,7 +86,7 @@ async function fetchWithTimeout(
   }
 }
 
-/** Search the STAC catalog via the Geo-Iris backend proxy. */
+/** Search the STAC catalog via the HeraOculus backend proxy. */
 export async function searchStacItems(
   options: StacSearchOptions
 ): Promise<StacSearchResult> {

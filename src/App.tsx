@@ -775,7 +775,7 @@ export const App: React.FC = () => {
             <div className="flex items-center space-x-1.5 font-semibold">
               <Globe2 className="w-4 h-4 text-gold-400" aria-hidden />
               <span>
-                <span className="text-silver-100">GEO</span><span className="text-gold-400">IRIS</span>
+                <span className="text-silver-100">HERA</span><span className="text-gold-400">OCULUS</span>
               </span>
             </div>
             <span aria-hidden>•</span>

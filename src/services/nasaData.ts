@@ -1083,7 +1083,7 @@ export function parseCustomCsv(
 }
 
 /**
- * Parse uploaded JSON time series: accepts either Geo-Iris export JSON
+ * Parse uploaded JSON time series: accepts either HeraOculus export JSON
  * (`{ metadata, timeSeries: [{ date, raw }] }`) or a raw array of `{ date, value }`.
  */
 export function parseCustomJson(jsonText: string): {

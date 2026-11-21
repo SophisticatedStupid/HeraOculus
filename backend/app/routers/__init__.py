@@ -1,1 +1,1 @@
-"""FastAPI router modules for Geo-Iris Phase 2."""
+"""FastAPI router modules for HeraOculus Phase 2."""

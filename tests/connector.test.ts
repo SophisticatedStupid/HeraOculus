@@ -22,6 +22,10 @@ import { modisConnector } from '../src/services/connectors/modisConnector';
 import { usgsConnector } from '../src/services/connectors/usgsConnector';
 import { noaaConnector } from '../src/services/connectors/noaaConnector';
 import { stacConnector } from '../src/services/connectors/stacConnector';
+import { chirpsConnector } from '../src/services/connectors/chirpsConnector';
+import { imergConnector } from '../src/services/connectors/imergConnector';
+import { era5LandConnector } from '../src/services/connectors/era5LandConnector';
+import { smapConnector } from '../src/services/connectors/smapConnector';
 import { describe, expect, it } from 'vitest';
 
 const RESULTS: Array<{
@@ -53,9 +57,9 @@ function findCandidate(
 }
 
 describe('connector registry', () => {
-  it('registers all seven connectors', () => {
+  it('registers all eleven connectors', () => {
     const ids = connectorRegistry.getAll().map(c => c.id).sort();
-    expect(ids).toHaveLength(7);
+    expect(ids).toHaveLength(11);
     expect(ids).toContain('nasa-power');
     expect(ids).toContain('ornl-modis');
     expect(ids).toContain('usgs-water');
@@ -63,6 +67,10 @@ describe('connector registry', () => {
     expect(ids).toContain('nasa-cmr');
     expect(ids).toContain('nasa-gibs');
     expect(ids).toContain('stac-catalog');
+    expect(ids).toContain('chirps');
+    expect(ids).toContain('imerg');
+    expect(ids).toContain('era5-land');
+    expect(ids).toContain('smap');
   });
 
   it('distinguishes global vs regional coverage', () => {
@@ -76,6 +84,10 @@ describe('connector registry', () => {
     expect(byId.get('nasa-cmr')!.capabilities.coverage.kind).toBe('global');
     expect(byId.get('nasa-gibs')!.capabilities.coverage.kind).toBe('global');
     expect(byId.get('stac-catalog')!.capabilities.coverage.kind).toBe('global');
+    expect(byId.get('chirps')!.capabilities.coverage.kind).toBe('regional');
+    expect(byId.get('imerg')!.capabilities.coverage.kind).toBe('global');
+    expect(byId.get('era5-land')!.capabilities.coverage.kind).toBe('regional');
+    expect(byId.get('smap')!.capabilities.coverage.kind).toBe('regional');
   });
 });
 
@@ -243,5 +255,86 @@ describe('STAC connector — provenance labelling & capabilities', () => {
     expect(ids).toContain('stac-catalog');
     const byId = new Map(connectorRegistry.getAll().map(c => [c.id, c]));
     expect(byId.get('stac-catalog')).toBeDefined();
+  });
+});
+
+describe('gridded connectors — coverage selection & provenance labelling', () => {
+  const byId = new Map(connectorRegistry.getAll().map(c => [c.id, c]));
+
+  it('CHIRPS covers the tropics but not 60N (outside 60S-60N)', () => {
+    const c = byId.get('chirps')!;
+    expect(c.provenanceType).toBe('satellite_observation');
+    expect(c.capabilities.coverage.kind).toBe('regional');
+    expect(c.coversPoint?.(0.0, 78.0)).toBe(true);   // South Asia — inside 60S-60N
+    expect(c.coversPoint?.(60.0, 78.0)).toBe(true);  // 60N boundary — inclusive
+    expect(c.coversPoint?.(61.0, 78.0)).toBe(false);  // clearly outside
+
+    const sel = connectorRegistry.getBestConnector('precip', 61.0, 78.0);
+    // CHIRPS does not cover 61N, but IMERG is global, so precip still resolves
+    // to IMERG (not a fallback).
+    expect(sel.fallback).toBe(false);
+    expect(selectedId(sel)).toBe('imerg');
+    const rejected = findCandidate(sel, 'chirps');
+    expect(rejected?.supportsVariable).toBe(true);
+    expect(rejected?.coversLocation).toBe(false);
+    expect(rejected?.reason).toContain('outside its service area');
+  });
+
+  it('IMERG is global and satellite_observation', () => {
+    const c = byId.get('imerg')!;
+    expect(c.provenanceType).toBe('satellite_observation');
+    expect(c.capabilities.coverage.kind).toBe('global');
+    expect(c.coversPoint?.(82.0, -50.0)).toBe(true);  // Arctic
+    expect(c.coversPoint?.(-33.0, -70.0)).toBe(true); // Southern Hemisphere
+
+    const sel = connectorRegistry.getBestConnector('precip', 82.0, -50.0);
+    expect(sel.fallback).toBe(false);
+    expect(selectedId(sel)).toBe('imerg');
+  });
+
+  it('ERA5-Land is regional global-land and reanalysis_model', () => {
+    const c = byId.get('era5-land')!;
+    expect(c.provenanceType).toBe('reanalysis_model');
+    expect(c.capabilities.coverage.kind).toBe('regional');
+    expect(c.coversPoint?.(-33.0, -70.0)).toBe(true); // Southern Hemisphere land
+    expect(c.coversPoint?.(82.0, -50.0)).toBe(true);  // within 90S-90N
+
+    // ERA5-Land carries reanalysis provenance, but for precip the registry
+    // prefers satellite_observation (CHIRPS/IMERG) where they cover, so ERA5-Land
+    // is not the top-scored precip connector at -33/-70 (CHIRPS covers it).
+    const sel = connectorRegistry.getBestConnector('precip', -33.0, -70.0);
+    expect(sel.fallback).toBe(false);
+    expect(selectedId(sel)).toBe('chirps');
+    expect(sel.connector!.provenanceType).toBe('satellite_observation');
+  });
+
+  it('gridded connectors support only precip', () => {
+    for (const id of ['chirps', 'imerg', 'era5-land']) {
+      const c = byId.get(id)!;
+      expect(c.supportsVariable('precip')).toBe(true);
+      expect(c.supportsVariable('temp_air')).toBe(false);
+      expect(c.supportsVariable('ndvi')).toBe(false);
+    }
+    // SMAP is soil-moisture only (root-zone), not precip.
+    const smap = byId.get('smap')!;
+    expect(smap.supportsVariable('soil_moist_root')).toBe(true);
+    expect(smap.supportsVariable('precip')).toBe(false);
+    expect(smap.supportsVariable('temp_air')).toBe(false);
+  });
+
+  it('SMAP covers the tropics but not 90N (outside 85S-85N)', () => {
+    const c = byId.get('smap')!;
+    expect(c.provenanceType).toBe('satellite_observation');
+    expect(c.capabilities.coverage.kind).toBe('regional');
+    expect(c.coversPoint?.(0.0, 78.0)).toBe(true);   // South Asia — inside 85S-85N
+    expect(c.coversPoint?.(86.0, 78.0)).toBe(false);  // 86N — outside edge
+
+    const sel = connectorRegistry.getBestConnector('soil_moist_root', 86.0, 78.0);
+    expect(sel.fallback).toBe(true);
+    expect(selectedId(sel)).toBeUndefined();
+    const rejected = findCandidate(sel, 'smap');
+    expect(rejected?.supportsVariable).toBe(true);
+    expect(rejected?.coversLocation).toBe(false);
+    expect(rejected?.reason).toContain('outside its service area');
   });
 });

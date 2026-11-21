@@ -19,6 +19,7 @@ export type VariableId =
   | 'snow_precip'
   | 'ozone_total'
   | 'soil_moist_top'
+  | 'soil_moist_root'
   | 'soil_moist_prof'
   | 'sea_level'
   | 'sst'
