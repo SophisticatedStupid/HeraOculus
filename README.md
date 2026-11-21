@@ -40,10 +40,13 @@ Earth observation analytics platform: trend detection, changepoint analysis, ext
 - ORNL DAAC MODIS time series (NDVI, EVI, global land)
 - **CHIRPS v3** monthly rainfall (Climate Hazards Center, keyless, 0.05°, 60°S–60°N, 1981–present)
 - **GPM IMERG Final V07B** monthly rainfall (NASA GES DISC, Earthdata login, 0.1°, global, 1998–present)
+- **SMAP L4** monthly root-zone/surface soil moisture (NSIDC / Earthdata Cloud, Earthdata login, 9 km EASE-Grid 2.0, global land 85°S–85°N, 2015–present)
 - **ERA5-Land** monthly total precipitation (Copernicus CDS / ARCO Zarr mirror, CDS key, 0.1°, global land, 1950–present)
+- **MODIS LST Night (MOD11A1 V061)** monthly nighttime land surface temperature (LAADS, Earthdata login, 1 km, global, 2000–present)
 - USGS NWIS streamflow gauges (United States only)
 - NOAA CO-OPS tide gauge sea level (United States coastal waters only)
 - NASA GIBS WMTS map tiles (true-color, NDVI, snow, LST, SST, global)
+- **STAC** scene catalog search (Earth Search / Planetary Computer, Sentinel-2, Landsat, Cloud-Optimized GeoTIFF asset URLs)
 
 ### Frontend workflows
 - Interactive Explorer with region selection and variable choice
@@ -52,6 +55,7 @@ Earth observation analytics platform: trend detection, changepoint analysis, ext
 - Variable encyclopedia with provenance and mission info
 - Custom CSV and GeoTIFF/NetCDF upload
 - Data export (CSV/GeoJSON)
+- **Generate GEE script** — ready-to-run Google Earth Engine Code Editor (JavaScript) and earthengine-api (Python) scripts from the current Explorer selection (region/point, date range, variable), with JS/Python tabs, copy-to-clipboard, and .js/.py download. Pure client-side code generation; no GEE credentials, backend, or network calls.
 
 ## Data provenance
 
@@ -60,7 +64,7 @@ Every data source carries a `provenanceType` that distinguishes live measurement
 | Provenance type | Sources | Live data? | Notes |
 |---|---|---|---|
 | `reanalysis_model` | NASA POWER (MERRA-2 / GLDAS / CERES), ERA5-Land | Yes (reanalysis) | Global gridded reanalysis, not station measurements. ERA5-Land requires a CDS API key / DestinE PAT; CDS access is queue-throttled. |
-| `satellite_observation` | MODIS (NDVI/EVI), GIBS (map tiles), CMR (catalog), STAC (scene catalog + COG asset URLs), CHIRPS v3 (rainfall), GPM IMERG Final (rainfall) | Yes (catalog/tiles; STAC assets are live COG URLs) | GIBS SST layer is `GHRSST_L4_MUR` map tiles; CMR and STAC are metadata/catalog — STAC exposes Cloud-Optimized GeoTIFF asset URLs for direct access. CHIRPS blends satellite estimates with in-situ gauge stations (not pure satellite); IMERG is satellite–gauge merged. |
+| `satellite_observation` | MODIS (NDVI/EVI), GIBS (map tiles), CMR (catalog), STAC (scene catalog + COG asset URLs), CHIRPS v3 (rainfall), GPM IMERG Final (rainfall), SMAP L4 (soil moisture), MODIS LST Night (temperature) | Yes (catalog/tiles; STAC assets are live COG URLs) | GIBS SST layer is `GHRSST_L4_MUR` map tiles; CMR and STAC are metadata/catalog — STAC exposes Cloud-Optimized GeoTIFF asset URLs for direct access. CHIRPS blends satellite estimates with in-situ gauge stations (not pure satellite); IMERG is satellite–gauge merged. SMAP root-zone soil moisture is a GEOS land-model estimate assimilating SMAP brightness temperatures (~7-day L4 latency), not a direct observation. MODIS LST Night is clear-sky only (~5-day latency). |
 | `in_situ_gauge` | USGS NWIS streamflow, NOAA CO-OPS tide gauges | Yes (gauge/station) | United States only |
 | `user_upload` | DEM, SAR, LULC GeoTIFF/NetCDF uploads | N/A (user-provided) | 35 MB limit per file |
 | `synthetic_demo` | Fallback when no live source covers a location | No | Calibrated demonstration data; never masquerades as live |
@@ -94,6 +98,7 @@ Base path: `/api/v1`
 | `/rasters/lulc-transitions` | POST | LULC transition analysis (array input) |
 | `/rasters/lulc-transitions/upload` | POST | LULC transition analysis (file upload) |
 | `/stac/search` | POST | Search public STAC catalogs (Sentinel-2, Landsat) via Earth Search / Planetary Computer proxy |
+| `/gridded/{dataset}` | POST | Normalized monthly precipitation series from gridded products (CHIRPS, IMERG, ERA5-Land, SMAP soil moisture, MODIS LST Night) via backend proxy; explicit `unavailable` status when credentials/coverage missing |
 
 **File upload limit:** 35 MB per file, enforced during streaming (not after full read). Invalid magic bytes, empty files, and path-traversal filenames are rejected with 400; oversized files return 413.
 
@@ -208,7 +213,7 @@ docker run -p 8000:8000 --env-file .env heraoculus-backend
 
 ### Backend (Python/pytest)
 
-17 test files covering health/auth, SAR/FIRMS/Earthdata uploads, statistics, spatial FDR, raster alignment, DEM/SAR/LULC nodata handling, pixel-area audits, extreme-value temporal assumptions, Bayesian MCMC diagnostics, changepoint recovery, NASA POWER parameter-map correctness, and upload size-limit streaming.
+20 test files covering health/auth, SAR/FIRMS/Earthdata uploads, statistics, spatial FDR, raster alignment, DEM/SAR/LULC nodata handling, pixel-area audits, extreme-value temporal assumptions, Bayesian MCMC diagnostics, changepoint recovery, NASA POWER parameter-map correctness, upload size-limit streaming, STAC catalog search, and gridded climate search (CHIRPS, IMERG, ERA5-Land, SMAP, MODIS LST Night).
 
 ```bash
 cd backend
@@ -217,7 +222,7 @@ python -m pytest tests/ -v
 
 ### Frontend (TypeScript/Vitest)
 
-6 test files covering statistical algorithms, worker communication and main-thread fallback, connector geographic selection and error handling, data provenance, CSV ingestion and empty-data handling, and Explorer workflow integration.
+8 test files covering statistical algorithms, worker communication and main-thread fallback, connector geographic selection and error handling, data provenance, CSV ingestion and empty-data handling, Explorer workflow integration, and GEE script generation snapshots/validation.
 
 ```bash
 npm run test
@@ -288,7 +293,7 @@ Geo-Iris-main/
 │   │   └── ...
 │   ├── services/
 │   │   ├── statistics/          # trend, ANOVA, nonlinear, GEV, bootstrap, PCA
-│   │   ├── connectors/          # 10 EarthData connectors + registry
+│   │   ├── connectors/          # 12 EarthData connectors + registry
 │   │   ├── nasaData.ts          # CSV ingestion, variable definitions
 │   │   └── ...
 │   ├── workers/
@@ -313,6 +318,8 @@ Geo-Iris-main/
     │   │   ├── earthdata.py
     │   │   ├── firms.py
     │   │   ├── rasters.py
+    │   │   ├── stac.py
+    │   │   ├── gridded.py
     │   │   └── stats_advanced.py
     │   └── services/
     │       ├── earthdata_service.py
@@ -321,7 +328,8 @@ Geo-Iris-main/
     │       ├── bayesian_service.py
     │       ├── extreme_service.py
     │       ├── spatial_fdr_service.py
-    │       └── forecast_service.py
+    │       ├── forecast_service.py
+    │       └── gridded_climate_service.py
     ├── tests/
     │   ├── test_health_and_auth.py
     │   ├── test_earthdata_firms.py
@@ -339,7 +347,10 @@ Geo-Iris-main/
     │   ├── test_raster_alignment.py
     │   ├── test_extreme_temporal.py
     │   ├── test_bayesian_diagnostics.py
-    │   └── test_changepoint_validation.py
+    │   ├── test_changepoint_validation.py
+    │   ├── test_stac_service.py
+    │   ├── test_gridded_climate.py
+    │   └── validation/
     ├── requirements.txt
     ├── .env.example
     └── Dockerfile

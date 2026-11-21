@@ -3,7 +3,7 @@ HERAOCULUS — Earth Science Change Detective & Significance Engine
 Complete Feature & Statistical Analysis Catalog
 ================================================================================
 
-Generated: 2026-11-20
+Generated: 2026-11-21
 Project Root: D:\Geo-Iris-main\Geo-Iris-main
 
 ================================================================================
@@ -18,7 +18,7 @@ Architecture: Full-stack web application
   - API Proxy: Frontend proxies /api -> http://127.0.0.1:8000 via vite.config.ts
   - Communication: REST JSON API; Web Workers for heavy client-side compute
 
-Git: Not a git repository (no .git directory found)
+Git: git repository, pushed to GitHub (main branch)
 
 ================================================================================
 2. DIRECTORY STRUCTURE
@@ -36,7 +36,7 @@ D:\Geo-Iris-main\Geo-Iris-main\
   │   │   ├─ nasaData.ts           Core earth variables + NASA POWER data fetch
   │   │   ├─ nasaDataExpanded.ts   Expanded NASA dataset definitions
   │   │   ├─ statistics/           Statistical modules (bootstrap, PCA, MK, ANOVA, GEV, etc.)
-  │   │   ├─ connectors/           6 NASA data connectors + registry (sibling to statistics/)
+  │   │   ├─ connectors/           12 NASA data connectors + registry (sibling to statistics/)
   │   │   │   ├─ powerConnector.ts   NASA POWER monthly API (reanalysis_model, global)
   │   │   │   ├─ modisConnector.ts   ORNL DAAC MODIS (satellite_observation, global land)
   │   │   │   ├─ usgsConnector.ts    USGS NWIS streamflow (in_situ_gauge, regional US)
@@ -70,8 +70,10 @@ D:\Geo-Iris-main\Geo-Iris-main\
   │   │   │   │   ├─ earthdata.py      NetCDF4, AppEEARS, vertical profiles, trace gases
   │   │   │   │   ├─ firms.py          NASA FIRMS active fire queries
   │   │   │   │   ├─ rasters.py        DEM DoD, SAR change, LULC, ASF search
-  │   │   │   │   ├─ stats_advanced.py SARIMA, Bayesian MCMC, Extreme Value, Spatial FDR
-  │   │   │   │   └─ utils.py          Upload file size enforcement
+│   │   │   │   ├─ stats_advanced.py SARIMA, Bayesian MCMC, Extreme Value, Spatial FDR
+│   │   │   │   ├─ gridded.py          Gridded climate search (CHIRPS, IMERG, ERA5-Land, SMAP, MODIS LST Night)
+│   │   │   │   ├─ stac.py             STAC catalog search (Sentinel-2, Landsat)
+│   │   │   │   └─ utils.py          Upload file size enforcement
   │   │   │   ├─ services/
   │   │   │   │   ├─ __init__.py
   │   │   │   │   ├─ auth_store.py     Read-only env-based credential store (masked)
@@ -82,11 +84,12 @@ D:\Geo-Iris-main\Geo-Iris-main\
   │   │   │   │   ├─ extreme_service.py GEV block maxima + GPD POT
   │   │   │   │   ├─ raster_service.py DEM DoD, SAR log-ratio, LULC transitions, ASF
   │   │   │   │   └─ spatial_fdr_service.py Vectorized Mann-Kendall + Spatial FDR
+│   │   │   │   │   └─ gridded_climate_service.py Gridded climate time series (CHIRPS, IMERG, ERA5-Land, SMAP, MODIS LST Night)
   │   │   ├─ requirements.txt          Python dependencies (22 packages)
   │   │   ├─ Dockerfile                Python 3.12-slim, port 8000
   │   │   ├─ Dockerfile.vercel         Vercel deployment, port 80
   │   │   └─ .env.example              Example environment configuration
-  │   ├─ tests/                        Backend pytest tests (17 files, ~155 test functions)
+  │   ├─ tests/                        Backend pytest tests (20+ files, ~285 test functions)
   │   │   ├─ test_earthdata_firms.py
   │   │   ├─ test_health_and_auth.py
   │   │   ├─ test_rasters.py
@@ -103,7 +106,11 @@ D:\Geo-Iris-main\Geo-Iris-main\
   │   │   ├─ test_raster_alignment.py
   │   │   ├─ test_extreme_temporal.py
   │   │   ├─ test_bayesian_diagnostics.py
-  │   │   └─ test_changepoint_validation.py
+  │   │   ├─ test_changepoint_validation.py
+  │   │   ├─ test_stac_service.py
+  │   │   ├─ test_gridded_climate.py
+  │   │   └─ validation/
+  │   │       └─ validate_trends_extremes.py  Cross-check MK, Theil-Sen, Hamed-Rao MK, GEV vs pymannkendall/scipy
   │   ├─ workers/                      (root-level workers reference)
   │   ├─ assets/                       Static assets
   │   ├─ theme/                        (root-level theme reference)
@@ -113,7 +120,7 @@ D:\Geo-Iris-main\Geo-Iris-main\
   │   ├─ vite.config.ts                Vite config + API proxy + manual chunks
   │   ├─ tsconfig.json                 TypeScript strict config
   │   └─ vercel.json                   Vercel deployment config
-  └─ GEO-IRIS_COMPLETE_FEATURE_CATALOG.txt  Feature catalog
+  └─ HeraOculus_COMPLETE_FEATURE_CATALOG.txt  Feature catalog
 
 ================================================================================
 3. FRONTEND FEATURES
@@ -141,13 +148,19 @@ D:\Geo-Iris-main\Geo-Iris-main\
     fluctuations", "conclusively state", "prove significance")
 
 3.2 NASA Data Connectors (src/services/connectors/)
-  6 connectors + registry:
+  12 connectors + registry:
   1. POWER (NASA POWER solar/meteorological data)
   2. MODIS (Moderate Resolution Imaging Spectroradiometer)
   3. GIBS (Global Imagery Browse Services)
   4. NOAA (National Oceanic and Atmospheric Administration)
   5. USGS (United States Geological Survey)
   6. CMR (Common Metadata Repository)
+  7. STAC (SpatioTemporal Asset Catalog - Sentinel-2, Landsat, COG assets)
+  8. CHIRPS (Climate Hazards Center rainfall, keyless)
+  9. IMERG (GPM precipitation, NASA Earthdata login)
+  10. ERA5-Land (Copernicus reanalysis, CDS key)
+  11. SMAP L4 (soil moisture, NASA Earthdata login)
+  12. MODIS LST Night (land surface temperature, NASA Earthdata login)
   Plus connector registry for dynamic lookup
 
 3.3 Frontend Statistics Modules (src/services/statistics/) — 16 modules
@@ -214,6 +227,7 @@ D:\Geo-Iris-main\Geo-Iris-main\
   - IrisGauge.tsx           Iris/gauge visualization
   - CustomDataUploader.tsx  Custom data file upload
   - DataExportModal.tsx     Data export dialog
+  - GeeScriptModal.tsx      GEE script generator (JS + Python, copy/download)
   - DetectiveMode.tsx       Detective mode investigation interface
   - VariableEncyclopedia.tsx Variable reference encyclopedia
   - RegionalContrastView.tsx Regional comparison view
@@ -948,13 +962,16 @@ Changes Made:
        results flagged (not masqueraded as live), CMR/GIBS support no variables
    - tests/csv-ingestion.test.ts — detectCsvPrimaryVariable,
        extractCsvCoordinates, parseCustomCsv (valid/empty/malformed CSV)
-   - tests/explorer.integration.test.ts — Explorer workflow: selection ->
-       validation -> trend analysis chaining, global/regional coverage,
-       fallback for out-of-coverage regional variables
+    - tests/explorer.integration.test.ts — Explorer workflow: selection ->
+        validation -> trend analysis chaining, global/regional coverage,
+        fallback for out-of-coverage regional variables
+    - tests/gee/scriptGenerator.test.ts — GEE JS/Python script generation
+        snapshots + validation (dates reversed, empty polygon, unsupported
+        variable, hostile strings)
 
- 8.9.7 Verification Results
-   - Backend tests: ~155 passed (17 pytest files)
-   - Frontend tests: 79 passed (6 vitest files)
+  8.9.7 Verification Results
+   - Backend tests: ~285 passed (20+ pytest files)
+   - Frontend tests: 139 passed (10 vitest files)
    - TypeScript compilation: tsc --noEmit — clean
    - Production build: tsc && vite build — clean
 
