@@ -18,6 +18,9 @@ from rasterio.transform import from_origin
 from app.services.raster_interpolation_service import (
     INTERPOLATION_METHODS,
     InterpolationResult,
+    interpolate_bicubic,
+    interpolate_bilinear,
+    interpolate_idw,
     run_interpolation,
     run_temporal_interpolation,
 )
@@ -27,6 +30,7 @@ from app.services.raster_inspection_service import (
     inspect_raster_from_bytes,
     inspect_raster_from_file,
 )
+from app.services.interpolation.idw import _haversine_meters
 from app.services.interpolation_validation_service import (
     validate_interpolation,
     get_compatible_methods,
@@ -220,10 +224,32 @@ def test_bilinear_continuous_only():
 # ---------------------------------------------------------------------------
 
 def test_bicubic_fills_hole():
-    arr = _make_array_with_hole()
+    """Bicubic fills a hole that is surrounded by valid observations.
+
+    Compact-support bicubic interpolates from the immediate neighbourhood, so
+    a hole whose cells all have valid neighbours is filled completely.
+    """
+    arr = _make_array_with_hole(shape=(6, 6), hole=(slice(2, 4), slice(2, 4)))
     r = run_interpolation(arr, method="bicubic", raster_type="continuous")
-    assert r.interpolated_pixel_count == 16
+    assert r.interpolated_pixel_count == 4
     assert r.remaining_nodata_count == 0
+
+
+def test_bicubic_4x4_not_5x5():
+    """A requested 4x4 neighbourhood must be a genuine 4x4 grid, not 5x5.
+
+    With a 4x4 stencil the four centre cells of a 4x4 hole have no valid
+    neighbour inside the stencil, so they are correctly excluded rather than
+    being filled by a silently-expanded 5x5 window.
+    """
+    arr = _make_array_with_hole()
+    r = run_interpolation(arr, method="bicubic", raster_type="continuous", neighborhood="4x4")
+    # Edge cells of the hole are reached by the 4x4 stencil; the four centre
+    # cells ((4,4),(4,5),(5,4),(5,5)) are not.
+    assert r.interpolated_pixel_count == 12
+    assert r.excluded_pixel_count == 4
+    for i, j in ((4, 4), (4, 5), (5, 4), (5, 5)):
+        assert r.provenance_mask[i, j] == "excluded", (i, j)
 
 
 def test_bicubic_clips_to_range():
@@ -559,6 +585,113 @@ def test_api_contract_preserved():
     assert hasattr(r, "processing_duration_ms")
     assert hasattr(r, "provenance_mask")
     assert hasattr(r, "reconstructed")
+
+
+# ---------------------------------------------------------------------------
+# Mathematical unit tests (analytically known results)
+# ---------------------------------------------------------------------------
+
+def test_bilinear_reproduces_plane_exactly():
+    """Bilinear at the centre of four diagonal neighbours reproduces a plane.
+
+    z = 3*row + col.  The missing cell (1, 1) is surrounded by the four
+    diagonal neighbours (0,0)=0, (0,2)=2, (2,0)=6, (2,2)=8 whose bilinear
+    centre weights (0.25 each) give exactly z(1,1) = 4.
+    """
+    arr = np.array([[0.0, 1.0, 2.0],
+                    [3.0, np.nan, 5.0],
+                    [6.0, 7.0, 8.0]])
+    r = interpolate_bilinear(arr)
+    assert r.provenance_mask[1, 1] == "interpolated"
+    assert abs(r.reconstructed[1, 1] - 4.0) < 1e-9
+
+
+def test_bicubic_reproduces_plane_exactly():
+    """Bicubic (cubic B-spline) reproduces a plane exactly.
+
+    The cubic B-spline reproduces polynomials up to degree three, so the
+    estimate at the missing cell (1, 1) equals z(1, 1) = 4.
+    """
+    arr = np.array([[0.0, 1.0, 2.0],
+                    [3.0, np.nan, 5.0],
+                    [6.0, 7.0, 8.0]])
+    r = interpolate_bicubic(arr)
+    assert r.provenance_mask[1, 1] == "interpolated"
+    assert abs(r.reconstructed[1, 1] - 4.0) < 1e-9
+
+
+def test_clip_to_observed_range_false_is_respected():
+    """An explicit clip_to_observed_range=False must not be overridden to True."""
+    arr = np.array([[0.0, 1.0, 2.0],
+                    [3.0, np.nan, 5.0],
+                    [6.0, 7.0, 8.0]])
+    r_false = interpolate_bicubic(arr, clip_to_observed_range=False)
+    assert r_false.config["clip_to_observed_range"] is False
+    r_true = interpolate_bicubic(arr)  # default True
+    assert r_true.config["clip_to_observed_range"] is True
+
+
+def test_edge_handling_policies():
+    """clamp / nodata / reject behave differently at a corner missing cell."""
+    arr = np.array([[np.nan, 1.0, 2.0],
+                    [3.0, 4.0, 5.0],
+                    [6.0, 7.0, 8.0]])
+    # reject: a diagonal neighbour is out of bounds -> excluded
+    r = interpolate_bilinear(arr, edge_handling="reject")
+    assert r.provenance_mask[0, 0] == "excluded"
+    # nodata: out of bounds skipped; only diagonal (1, 1) = 4 is valid
+    r = interpolate_bilinear(arr, edge_handling="nodata")
+    assert abs(r.reconstructed[0, 0] - 4.0) < 1e-9
+    # clamp: (-1,1)->(0,1)=1, (1,-1)->(1,0)=3, (1,1)=4 valid -> mean 8/3
+    r = interpolate_bilinear(arr, edge_handling="clamp")
+    assert abs(r.reconstructed[0, 0] - 8.0 / 3.0) < 1e-9
+
+
+def test_haversine_is_geodesic():
+    """Haversine distance is in metres and respects the latitude scale."""
+    # One degree of latitude is ~111320 m everywhere.
+    assert abs(_haversine_meters(0.0, 0.0, 1.0, 0.0) - 111320.0) < 600.0
+    # One degree of longitude at the equator is ~111320 m.
+    assert abs(_haversine_meters(0.0, 0.0, 0.0, 1.0) - 111320.0) < 600.0
+    # One degree of longitude at 60 deg latitude is about half (~cos 60 = 0.5).
+    d_equator = _haversine_meters(0.0, 0.0, 0.0, 1.0)
+    d_60 = _haversine_meters(60.0, 0.0, 60.0, 1.0)
+    assert d_60 < d_equator * 0.6
+
+
+def test_idw_geographic_uses_metres():
+    """Geographic IDW converts degrees to metres via haversine."""
+    arr = np.array([[10.0, np.nan, 20.0],
+                    [np.nan, np.nan, np.nan],
+                    [30.0, np.nan, 40.0]])
+    # Nearest neighbour is ~111 km away (1 deg at the equator).
+    # A 50 km search radius excludes every neighbour.
+    r = interpolate_idw(arr, geographic_crs=True,
+                        pixel_size_x=1.0, pixel_size_y=1.0,
+                        search_radius_pixels=50000)
+    assert r.provenance_mask[1, 1] == "excluded"
+    # A 200 km search radius reaches the neighbours -> interpolated.
+    r = interpolate_idw(arr, geographic_crs=True,
+                        pixel_size_x=1.0, pixel_size_y=1.0,
+                        search_radius_pixels=200000)
+    assert r.provenance_mask[1, 1] == "interpolated"
+    # Without pixel sizes, geographic falls back to pixel-Euclidean (no crash).
+    r = interpolate_idw(arr, geographic_crs=True)
+    assert r.provenance_mask[1, 1] == "interpolated"
+
+
+def test_idw_projected_uses_pixel_coordinates():
+    """Projected IDW uses pixel-Euclidean distance (no degree/radian mix)."""
+    arr = np.array([[np.nan, 1.0, 2.0],
+                    [3.0, np.nan, 5.0],
+                    [6.0, 7.0, 8.0]])
+    r = interpolate_idw(arr, geographic_crs=False)
+    assert r.provenance_mask[0, 0] == "interpolated"
+    assert np.isfinite(r.reconstructed[0, 0])
+    # Anisotropic pixel sizes are honoured (run without error, finite result).
+    r = interpolate_idw(arr, geographic_crs=False,
+                        pixel_size_x=10.0, pixel_size_y=1.0)
+    assert np.isfinite(r.reconstructed[0, 0])
 
 
 if __name__ == "__main__":

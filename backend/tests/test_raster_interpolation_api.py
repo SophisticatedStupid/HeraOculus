@@ -368,7 +368,42 @@ def test_export_endpoint_provenance_only():
     _roundtrip_export(resp, expect_count=1, expect_reconstructed=False)
 
 
-def test_export_endpoint_unsafe_filename_still_safe():
+def test_export_endpoint_unsafe_filename_rejected():
+    """Path-traversal filenames are rejected (HTTP 400), never written to disk."""
+    arr = _make_hole_array()
+    interp_payload = {
+        "data": _array_to_payload(arr),
+        "method": "nearest_neighbor",
+        "raster_type": "continuous",
+        "band_index": 1,
+    }
+    interp_resp = client.post("/api/v1/rasters/interpolate", json=interp_payload)
+    assert interp_resp.status_code == 200
+    interp_data = interp_resp.json()
+
+    for evil in [
+        "../../../outside/evil.tif",
+        "..\\..\\evil.tif",
+        "folder/evil.tif",
+        "evil/../escape.tif",
+    ]:
+        export_payload = {
+            "output_filename": evil,
+            "nodata": -9999.0,
+            "include_provenance_band": True,
+            "include_quality_band": False,
+            "reconstructed_array": interp_data["reconstructed"],
+            "provenance_mask": interp_data["provenance_mask"],
+            "crs": "EPSG:32610",
+            "transform": {"a": 10, "b": 0, "c": 500000, "d": 0, "e": -10, "f": 5000000},
+            "method": "nearest_neighbor",
+        }
+        resp = client.post("/api/v1/rasters/interpolate/export", json=export_payload)
+        assert resp.status_code == 400, f"{evil!r} should be rejected, got {resp.status_code}"
+
+
+def test_export_endpoint_safe_filename_accepted():
+    """A safe basename download name is accepted and echoed in Content-Disposition."""
     arr = _make_hole_array()
     interp_payload = {
         "data": _array_to_payload(arr),
@@ -381,8 +416,7 @@ def test_export_endpoint_unsafe_filename_still_safe():
     interp_data = interp_resp.json()
 
     export_payload = {
-        # Path-traversal attempt: must be reduced to a safe basename.
-        "output_filename": "../../../outside/evil.tif",
+        "output_filename": "my_result.tif",
         "nodata": -9999.0,
         "include_provenance_band": True,
         "include_quality_band": False,
@@ -393,9 +427,9 @@ def test_export_endpoint_unsafe_filename_still_safe():
         "method": "nearest_neighbor",
     }
     resp = client.post("/api/v1/rasters/interpolate/export", json=export_payload)
-    assert resp.status_code == 200
+    assert resp.status_code == 200, resp.text
     cd = resp.headers.get("content-disposition", "")
-    assert 'filename="evil.tif"' in cd, cd
+    assert 'filename="my_result.tif"' in cd, cd
     # Body must still be a valid GeoTIFF (quality band is nodata-filled).
     import os, tempfile
     fd, path = tempfile.mkstemp(suffix=".tif")

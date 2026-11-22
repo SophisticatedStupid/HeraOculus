@@ -187,7 +187,11 @@ def run_interpolation(
             neighborhood=kwargs.get("neighborhood") or "4x4",
             edge_handling=kwargs.get("edge_handling") or "clamp",
             max_distance_pixels=max_distance_pixels,
-            clip_to_observed_range=kwargs.get("clip_to_observed_range") or True,
+            clip_to_observed_range=(
+                True
+                if kwargs.get("clip_to_observed_range") is None
+                else bool(kwargs["clip_to_observed_range"])
+            ),
             band_index=band_index,
         )
     elif method == "local_mean":

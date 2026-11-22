@@ -76,6 +76,41 @@ router = APIRouter(
 # upload from monopolizing worker threads indefinitely.
 RASTER_PROCESS_TIMEOUT = 120.0
 
+# ---------------------------------------------------------------------------
+# Export directory security
+# ---------------------------------------------------------------------------
+# All generated export artifacts live in a dedicated subdirectory of the
+# system temp directory.  Using a dedicated directory (rather than the shared
+# temp root) keeps exports isolated from other temp files and lets us verify
+# that every resolved output path stays inside it, defeating path traversal.
+EXPORT_DIR = os.path.join(tempfile.gettempdir(), "heraoculus_exports")
+
+
+def _ensure_export_dir() -> str:
+    """Create and return the dedicated export directory."""
+    os.makedirs(EXPORT_DIR, exist_ok=True)
+    return EXPORT_DIR
+
+
+def _safe_export_path(stored_name: str) -> str:
+    """Return a resolved export path guaranteed to stay inside EXPORT_DIR.
+
+    ``stored_name`` is always server-generated (a UUID), but we verify the
+    resolved path anyway as defense-in-depth: even if a future caller passes a
+    client-controlled name, path traversal cannot escape the export directory.
+    """
+    export_dir = os.path.realpath(_ensure_export_dir())
+    output_path = os.path.realpath(os.path.join(export_dir, stored_name))
+    inside = (
+        output_path == export_dir
+        or output_path.startswith(export_dir + os.sep)
+    )
+    if not inside:
+        raise HTTPException(
+            status_code=400, detail="Unsafe export path requested."
+        )
+    return output_path
+
 
 # ---------------------------------------------------------------------------
 # Raster Inspection
@@ -270,18 +305,17 @@ def export_interpolation(
     Writes a real GeoTIFF (reconstructed values + provenance band +
     optional quality band), preserves CRS/geotransform/dimensions/nodata,
     and streams it back as an HTTP download.  The generated file lives in a
-    server-generated temp path (never exposed to the client) and is removed
-    after the response is sent.
+    server-generated path inside a dedicated export directory (never exposed
+    to the client) and is removed after the response is sent.
 
     Band layout (full export):
       Band 1: Reconstructed values (NaN -> nodata)
       Band 2: Provenance class (integer: 1=observed, 2=interpolated, 3=nodata, 4=excluded)
       Band 3: Quality score (0-1, NaN -> nodata) when available/requested
     """
-    output_dir = tempfile.gettempdir()
     # Server-generated stored filename: never trust or echo the client path.
     stored_name = f"heraoculus_export_{uuid.uuid4().hex}.tif"
-    output_path = os.path.join(output_dir, stored_name)
+    output_path = _safe_export_path(stored_name)
 
     # Convert transform dict to Affine
     affine_transform = None
@@ -349,17 +383,32 @@ def export_interpolation(
 def _safe_download_filename(filename: Optional[str]) -> str:
     """Return a safe download (Content-Disposition) filename.
 
-    Only the basename is used; directory traversal is rejected.  A .tif
-    extension is ensured.  The actual stored file uses a server-generated
-    name, so no server path is ever exposed.
+    The client-supplied ``output_filename`` is used *only* for the
+    ``Content-Disposition`` download name, never as a filesystem path.  Path
+    separators and ``..`` traversal components are rejected outright (HTTP 400)
+    rather than silently rewritten, so callers cannot confuse the download
+    name with a server path.  A ``.tif`` extension is ensured.
+
+    The actual stored file always uses a server-generated UUID name inside the
+    dedicated export directory, so no server path is ever exposed to the client
+    and arbitrary filesystem overwrites are impossible.
     """
     default = "heraoculus_export.tif"
     if not filename:
         return default
-    name = os.path.basename(str(filename)).strip()
+    name = str(filename).strip()
+    if not name:
+        return default
+    # Reject any path separator or traversal component.
+    if "/" in name or "\\" in name or ".." in name.split("/") or ".." in name.split("\\"):
+        raise HTTPException(
+            status_code=400,
+            detail="Unsafe export filename: path separators and '..' are not allowed.",
+        )
+    # Reduce to basename for the download label.
+    name = os.path.basename(name).strip()
     if not name or name in (".", ".."):
         return default
-    name = name.replace("/", "_").replace("\\", "_")
     if not name.lower().endswith((".tif", ".tiff")):
         name += ".tif"
     return name or default

@@ -278,3 +278,150 @@ describe('validation', () => {
     expect(safe).not.toContain('DROP TABLE');
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* Temporal aggregation structure                                             */
+/* -------------------------------------------------------------------------- */
+
+describe('temporal aggregation structure', () => {
+  function jsAggBlock(js: string): string {
+    const start = js.indexOf('// 3. Apply temporal aggregation.');
+    const end = js.indexOf('// 4. Export / chart.');
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    return js.slice(start, end);
+  }
+
+  function pyAggBlock(py: string): string {
+    const start = py.indexOf('# 4. Apply temporal aggregation.');
+    const end = py.indexOf('# 5. Export / chart');
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    return py.slice(start, end);
+  }
+
+  it('JS annual aggregation declares `years` before using it', () => {
+    const js = genJs({ temporalAggregation: 'annual', exportTarget: 'chart' });
+    const block = jsAggBlock(js);
+    expect(block).toContain("var years = ee.List.sequence(2024, 2024);");
+    expect(block).toContain('years.map(function(y) {');
+    expect(block).toContain("calendarRange(y, y, 'year')");
+    expect(block).toContain("ee.Date.fromYMD(y, 1, 1)");
+    // `years` must be declared before it is referenced (no undefined reference).
+    const decl = block.indexOf('var years = ee.List.sequence');
+    const use = block.indexOf('years.map');
+    expect(decl).toBeGreaterThanOrEqual(0);
+    expect(use).toBeGreaterThan(decl);
+  });
+
+  it('JS monthly aggregation declares `years` and `months`', () => {
+    const js = genJs({ temporalAggregation: 'monthly', exportTarget: 'chart' });
+    const block = jsAggBlock(js);
+    expect(block).toContain("var years = ee.List.sequence(2024, 2024);");
+    expect(block).toContain("var months = ee.List.sequence(1, 12);");
+    expect(block).toContain("calendarRange(y, y, 'year')");
+    expect(block).toContain("calendarRange(m, m, 'month')");
+    expect(block).toContain("ee.Date.fromYMD(y, m, 1)");
+    expect(block).toContain('.flatten()');
+  });
+
+  it('different start and end years produce a year sequence', () => {
+    const js = genJs({
+      temporalAggregation: 'annual',
+      startDate: '2020-03-01',
+      endDate: '2024-11-30',
+      exportTarget: 'chart',
+    });
+    const block = jsAggBlock(js);
+    expect(block).toContain("var years = ee.List.sequence(2020, 2024);");
+    expect(js).toContain("filterDate('2020-03-01', '2024-11-30')");
+  });
+
+  it('leap-year boundary date normalizes and is covered by annual aggregation', () => {
+    // 2024 is a leap year; 2023 is not.
+    expect(() =>
+      genJs({ startDate: '2024-02-29', endDate: '2024-02-29' })
+    ).not.toThrow();
+    expect(() =>
+      genJs({ startDate: '2023-02-29', endDate: '2023-02-29' })
+    ).toThrow(GeeScriptError);
+    const js = genJs({
+      temporalAggregation: 'annual',
+      startDate: '2024-01-01',
+      endDate: '2024-12-31',
+    });
+    expect(js).toContain("var years = ee.List.sequence(2024, 2024);");
+  });
+
+  it('single-day range (start == end) is valid', () => {
+    const js = genJs({
+      temporalAggregation: 'annual',
+      startDate: '2024-06-15',
+      endDate: '2024-06-15',
+    });
+    expect(js).toContain("filterDate('2024-06-15', '2024-06-15')");
+    expect(js).toContain("var years = ee.List.sequence(2024, 2024);");
+  });
+
+  it('reversed date range (truly empty) is rejected', () => {
+    expect(() =>
+      genJs({ startDate: '2024-12-31', endDate: '2024-01-01' })
+    ).toThrow(GeeScriptError);
+  });
+
+  it('generated script references the configured band', () => {
+    const js = genJs({
+      variableId: 'ndvi' as VariableId,
+      datasetIndex: 0,
+      temporalAggregation: 'annual',
+    });
+    expect(js).toContain("'NDVI'");
+    const py = genPy({
+      variableId: 'ndvi' as VariableId,
+      datasetIndex: 0,
+      temporalAggregation: 'annual',
+    });
+    expect(py).toContain('"NDVI"');
+  });
+
+  it('unknown variable (missing band/dataset) is rejected', () => {
+    expect(() =>
+      genJs({ variableId: 'soil_moist' as VariableId, temporalAggregation: 'annual' })
+    ).toThrow(GeeScriptError);
+  });
+
+  it('Python annual aggregation declares `years`', () => {
+    const py = genPy({ temporalAggregation: 'annual', exportTarget: 'chart' });
+    const block = pyAggBlock(py);
+    expect(block).toContain('years = ee.List.sequence(2024, 2024)');
+    expect(block).toContain('def year_img(y):');
+    expect(block).toContain("calendarRange(y, y, 'year')");
+    expect(block).toContain("ee.Date.fromYMD(y, 1, 1)");
+  });
+
+  it('Python monthly aggregation declares `years` and `months`', () => {
+    const py = genPy({ temporalAggregation: 'monthly', exportTarget: 'chart' });
+    const block = pyAggBlock(py);
+    expect(block).toContain('years = ee.List.sequence(2024, 2024)');
+    expect(block).toContain('months = ee.List.sequence(1, 12)');
+    expect(block).toContain("calendarRange(m, m, 'month')");
+  });
+
+  it('generated JS script has the expected top-level structure', () => {
+    const js = genJs({ temporalAggregation: 'annual' });
+    expect(js).toContain(
+      '// HeraOculus → Google Earth Engine (Code Editor) JavaScript'
+    );
+    expect(js).toMatch(/var geometry = /);
+    expect(js).toMatch(/var collection = ee\.ImageCollection\(/);
+    expect(js).toMatch(/aggColl = ee\.ImageCollection\.fromImages\(/);
+    expect(js).toMatch(/var chart = /);
+    expect(js).toContain('// End of HeraOculus GEE script.');
+    const collIdx = js.indexOf('var collection =');
+    const aggIdx = js.indexOf('aggColl =');
+    const chartIdx = js.indexOf('var chart =');
+    expect(collIdx).toBeGreaterThanOrEqual(0);
+    expect(aggIdx).toBeGreaterThan(collIdx);
+    expect(chartIdx).toBeGreaterThan(aggIdx);
+  });
+});

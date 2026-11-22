@@ -290,6 +290,7 @@ function buildTemporalAggregation(
     // annual
     return `
   // Aggregate to annual means.
+  var years = ee.List.sequence(${sy}, ${ey});
   aggColl = ee.ImageCollection.fromImages(
     years.map(function(y) {
       var c = ${collExpr}

@@ -18,7 +18,7 @@ Limits
 ~~~~~~
 ``LIMIT_LIGHT`` (60/minute)   default, covers undecorated routes such as /health
 ``LIMIT_UPSTREAM`` (10/minute) routes that call external services using the
-                                backend's own credentials
+                                 backend's own credentials
 ``LIMIT_HEAVY`` (5/minute)    CPU-heavy compute and file-upload routes
 
 The limiter keys on the real client IP.  Behind a trusted reverse proxy
@@ -26,6 +26,15 @@ The limiter keys on the real client IP.  Behind a trusted reverse proxy
 trusted, but only when ``TRUST_PROXY_HEADERS=true``; otherwise the socket
 peer address is used so clients cannot spoof ``X-Forwarded-For`` to dodge
 rate limits.
+
+Deployment note: the default :class:`slowapi.Limiter` uses in-memory storage,
+so its counters are *per process*.  In a serverless / multi-instance
+deployment (e.g. multiple Vercel functions or several backend containers)
+each instance maintains its own counters, so the effective limit is
+``limit × instance_count``.  For a globally-enforced limit across instances,
+back slowapi with a shared storage backend (e.g. Redis via
+``storage_uri="redis://..."``) rather than relying on the default in-memory
+limiter.
 """
 
 from __future__ import annotations

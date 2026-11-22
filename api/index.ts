@@ -45,7 +45,7 @@ export async function handleRequest(request: Request): Promise<Response> {
   }
 
   const backendUrl = process.env.BACKEND_URL;
-  const apiKey = process.env.HERAOCULUS_API_KEY;
+  const apiKey = process.env.HERAOCULUS_API_KEY?.trim();
   if (!backendUrl || !apiKey) {
     return new Response(
       JSON.stringify({ error: 'Backend not configured' }),

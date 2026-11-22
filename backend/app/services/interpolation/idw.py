@@ -2,18 +2,47 @@
 
 Z(x) = sum(w_i * z_i) / sum(w_i), where w_i = 1 / d_i^p.
 
-Supports Euclidean distance (projected CRS) and approximate geodesic
-distance (geographic CRS) via haversine using pixel centroids.
+Distances are computed in *map units*:
+
+* Projected CRS: Euclidean distance between pixel coordinates (the coordinates
+  are already in a linear unit such as metres).
+* Geographic CRS: great-circle (haversine) distance between pixel centroids,
+  expressed in metres.  Pixel centroids are placed relative to the raster
+  centre using ``pixel_size_x`` / ``pixel_size_y`` (degrees per pixel); this
+  preserves the latitude dependence of the longitude scale (``cos(lat)``) and
+  never mixes degrees with metres.  The absolute longitude/latitude offset is
+  arbitrary (the raster is placed relative to its centre), but relative
+  great-circle distances between pixels are computed correctly on the sphere.
+  True absolute geodesics require the raster geographic transform origin, which
+  is not available to the interpolator.
 """
 
 from __future__ import annotations
 
+import math
 import time
 from typing import Optional
 
 import numpy as np
 
 from .base import InterpolationResult, _ensure_float_array, _valid_mask
+
+
+# Mean Earth radius in metres.
+_EARTH_RADIUS_M = 6371000.0
+
+
+def _haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance between two points (degrees) in metres."""
+    lat1, lon1, lat2, lon2 = map(math.radians, (lat1, lon1, lat2, lon2))
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    h = (
+        math.sin(dlat / 2.0) ** 2
+        + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2.0) ** 2
+    )
+    h = min(1.0, h)
+    return 2.0 * _EARTH_RADIUS_M * math.asin(math.sqrt(h))
 
 
 def interpolate_idw(
@@ -32,17 +61,17 @@ def interpolate_idw(
 
     Z(x) = sum(w_i * z_i) / sum(w_i), where w_i = 1 / d_i^p.
 
-    Supports Euclidean distance (projected CRS) and approximate geodesic
-    distance (geographic CRS) via haversine using pixel centroids.
-
     Args:
         array: 2D float64 array, NaN = missing.
         power: IDW power parameter p.
         search_radius_pixels: Max search radius in pixels.
         max_neighbors: Maximum number of neighbors to use.
         min_neighbors: Minimum valid neighbors required (else NoData).
-        geographic_crs: If True, use approximate geodesic distance.
-        pixel_size_x, pixel_size_y: Pixel dimensions for geographic distance.
+        geographic_crs: If True, use great-circle (haversine) distance in
+            metres; otherwise Euclidean distance in pixel coordinates.
+        pixel_size_x, pixel_size_y: Pixel dimensions.  For a geographic CRS
+            these are degrees per pixel and are converted to metres via
+            haversine; for a projected CRS they are map units per pixel.
         band_index: 1-based band number.
 
     Returns:
@@ -58,7 +87,7 @@ def interpolate_idw(
     provenance = np.full((H, W), "nodata", dtype=object)
     provenance[valid] = "observed"
 
-    # Build coordinate grids (row, col) -> map coordinates
+    # Build coordinate grids (row, col).
     valid_coords = np.argwhere(valid)  # (N, 2) [row, col]
     missing_coords = np.argwhere(missing)  # (M, 2) [row, col]
 
@@ -66,29 +95,38 @@ def interpolate_idw(
     excluded_count = 0
     distance_to_obs = np.full((H, W), np.nan, dtype=float)
 
+    # Raster-centre anchor for geographic centroid positions (degrees).
+    center_r = (H - 1) / 2.0
+    center_c = (W - 1) / 2.0
+
     if missing_coords.size > 0 and valid_coords.size > 0:
         valid_vals = arr[valid]
 
-        # Precompute pixel-to-map conversion if geographic
+        # Precompute pixel centroid geographic positions (degrees) when needed.
         if geographic_crs and pixel_size_x and pixel_size_y:
-            # Approximate: convert pixel offsets to meters at raster center
-            # Using average pixel size as isotropic scale (simplification)
-            pass  # pixel distances used directly; geographic handled via haversine below
+            valid_lat = (center_r - valid_coords[:, 0]) * pixel_size_y
+            valid_lon = (valid_coords[:, 1] - center_c) * pixel_size_x
 
         for r, c in missing_coords:
-            # Compute distances to all valid pixels
+            # Compute distances to all valid pixels.
             dr = valid_coords[:, 0] - r
             dc = valid_coords[:, 1] - c
 
             if geographic_crs and pixel_size_x and pixel_size_y:
-                # Approximate haversine distance using pixel offsets * pixel size
-                # at the raster center latitude. We don't have lat/lon per pixel,
-                # so use pixel-size-scaled Euclidean as an approximation.
-                dist = np.sqrt((dr * pixel_size_y) ** 2 + (dc * pixel_size_x) ** 2)
+                # Great-circle (haversine) distance in metres between centroids.
+                miss_lat = (center_r - r) * pixel_size_y
+                miss_lon = (c - center_c) * pixel_size_x
+                dist = np.array(
+                    [
+                        _haversine_meters(miss_lat, miss_lon, float(vla), float(vlo))
+                        for vla, vlo in zip(valid_lat, valid_lon)
+                    ],
+                    dtype=float,
+                )
             else:
                 dist = np.sqrt(dr * dr + dc * dc)
 
-            # Apply search radius filter
+            # Apply search radius filter.
             if search_radius_pixels is not None:
                 within_radius = dist <= search_radius_pixels
                 if not np.any(within_radius):
@@ -102,7 +140,7 @@ def interpolate_idw(
                 candidate_vals = valid_vals
                 candidate_coords = valid_coords
 
-            # Sort by distance, take max_neighbors
+            # Sort by distance, take max_neighbors.
             order = np.argsort(dist)
             dist = dist[order]
             candidate_vals = candidate_vals[order]
@@ -116,10 +154,9 @@ def interpolate_idw(
                 excluded_count += 1
                 continue
 
-            # Handle zero-distance observations (duplicate coordinates)
+            # Handle zero-distance observations (duplicate coordinates).
             zero_mask = dist <= 1e-12
             if np.any(zero_mask):
-                # Use the value of the zero-distance observation directly
                 reconstructed[r, c] = float(candidate_vals[zero_mask][0])
                 distance_to_obs[r, c] = 0.0
             else:

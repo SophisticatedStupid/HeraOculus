@@ -402,6 +402,7 @@ var collection = ee.ImageCollection('MODIS/061/MOD11A1')
 // 3. Apply temporal aggregation.
 
 // Aggregate to annual means.
+var years = ee.List.sequence(2024, 2024);
 aggColl = ee.ImageCollection.fromImages(
   years.map(function(y) {
     var c = collection
