@@ -7,7 +7,11 @@ import asyncio
 import os
 import tempfile
 import uuid
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+
+import numpy as np
+import rasterio
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse
 from rasterio.transform import Affine
 
 from ..security import LIMIT_HEAVY, LIMIT_UPSTREAM, limiter, require_api_key
@@ -256,17 +260,28 @@ def interpolate_raster(request: Request, payload: InterpolateRequest) -> dict:
 
 @router.post("/interpolate/export")
 @limiter.limit(LIMIT_HEAVY)
-def export_interpolation(request: Request, payload: ExportRequest) -> dict:
-    """Export reconstructed raster as GeoTIFF with provenance and quality bands.
+def export_interpolation(
+    request: Request,
+    payload: ExportRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Export reconstructed raster as a downloadable GeoTIFF.
 
-    Accepts a reconstructed array and provenance mask, writes a GeoTIFF with
-    three bands: reconstructed values, provenance mask, quality score.
-    Does not overwrite any source file.
+    Writes a real GeoTIFF (reconstructed values + provenance band +
+    optional quality band), preserves CRS/geotransform/dimensions/nodata,
+    and streams it back as an HTTP download.  The generated file lives in a
+    server-generated temp path (never exposed to the client) and is removed
+    after the response is sent.
+
+    Band layout (full export):
+      Band 1: Reconstructed values (NaN -> nodata)
+      Band 2: Provenance class (integer: 1=observed, 2=interpolated, 3=nodata, 4=excluded)
+      Band 3: Quality score (0-1, NaN -> nodata) when available/requested
     """
-    import numpy as np
-
     output_dir = tempfile.gettempdir()
-    output_path = os.path.join(output_dir, payload.output_filename)
+    # Server-generated stored filename: never trust or echo the client path.
+    stored_name = f"heraoculus_export_{uuid.uuid4().hex}.tif"
+    output_path = os.path.join(output_dir, stored_name)
 
     # Convert transform dict to Affine
     affine_transform = None
@@ -281,31 +296,126 @@ def export_interpolation(request: Request, payload: ExportRequest) -> dict:
                 status_code=400, detail=f"Invalid transform: {exc}"
             ) from exc
 
-    try:
-        save_provenance_geotiff(
-            output_path=output_path,
-            reconstructed_array=np.array(payload.reconstructed_array, dtype=float),
-            provenance_mask=np.array(payload.provenance_mask, dtype=object),
-            quality_raster=np.array(payload.quality_mask, dtype=float) if payload.quality_mask else None,
-            crs=payload.crs,
-            transform=affine_transform,
-            nodata=payload.nodata,
-            input_metadata={},
-            processing_metadata={"method": payload.method, "export": True},
+    quality_raster = None
+    if payload.include_quality_band and payload.quality_mask is not None:
+        try:
+            quality_raster = np.array(payload.quality_mask, dtype=float)
+        except Exception:
+            quality_raster = None
+
+    if payload.export_type == "full" and payload.reconstructed_array is None:
+        raise HTTPException(
+            status_code=400,
+            detail="`reconstructed_array` is required for a 'full' export.",
         )
+
+    try:
+        if payload.export_type == "provenance":
+            _write_standalone_provenance_geotiff(
+                output_path=output_path,
+                provenance_mask=payload.provenance_mask,
+                crs=payload.crs,
+                transform=affine_transform,
+                nodata=payload.nodata,
+            )
+            band_count = 1
+        else:
+            save_provenance_geotiff(
+                output_path=output_path,
+                reconstructed_array=np.array(payload.reconstructed_array, dtype=float),
+                provenance_mask=np.array(payload.provenance_mask, dtype=object),
+                quality_raster=quality_raster,
+                crs=payload.crs,
+                transform=affine_transform,
+                nodata=payload.nodata,
+                input_metadata={},
+                processing_metadata={"method": payload.method, "export": True},
+            )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Export failed: {exc}") from exc
 
-    return {
-        "output_path": output_path,
-        "filename": payload.output_filename,
-        "bands": 3,
-        "crs": str(payload.crs) if payload.crs else None,
-        "include_provenance_band": payload.include_provenance_band,
-        "include_quality_band": payload.include_quality_band,
+    download_name = _safe_download_filename(payload.output_filename)
+    background_tasks.add_task(cleanup_temp_file, output_path)
+    return FileResponse(
+        path=output_path,
+        media_type="image/tiff",
+        filename=download_name,
+        background=background_tasks,
+    )
+
+
+def _safe_download_filename(filename: Optional[str]) -> str:
+    """Return a safe download (Content-Disposition) filename.
+
+    Only the basename is used; directory traversal is rejected.  A .tif
+    extension is ensured.  The actual stored file uses a server-generated
+    name, so no server path is ever exposed.
+    """
+    default = "heraoculus_export.tif"
+    if not filename:
+        return default
+    name = os.path.basename(str(filename)).strip()
+    if not name or name in (".", ".."):
+        return default
+    name = name.replace("/", "_").replace("\\", "_")
+    if not name.lower().endswith((".tif", ".tiff")):
+        name += ".tif"
+    return name or default
+
+
+def _write_standalone_provenance_geotiff(
+    *,
+    output_path: str,
+    provenance_mask: list[list[str]],
+    crs: Optional[str],
+    transform,
+    nodata: float = -9999.0,
+) -> None:
+    """Write a standalone provenance-mask GeoTIFF (1 band, codes 1/2/3/4)."""
+    import numpy as np
+
+    prov_encoding = {"observed": 1, "interpolated": 2, "nodata": 3, "excluded": 4}
+    arr = np.asarray(provenance_mask, dtype=object)
+    if arr.ndim != 2:
+        raise ValueError("provenance_mask must be a 2D array")
+    h, w = arr.shape
+    band = np.full((h, w), 3, dtype=np.float32)  # default = nodata
+    for cls, code in prov_encoding.items():
+        band[arr == cls] = code
+
+    profile = {
+        "driver": "GTiff",
+        "height": h,
+        "width": w,
+        "count": 1,
+        "dtype": "float32",
+        "crs": crs,
+        "transform": transform,
+        "nodata": nodata,
+        "compress": "lzw",
     }
+
+    fd, tmp_path = tempfile.mkstemp(
+        suffix=".tif", dir=os.path.dirname(output_path) or "."
+    )
+    os.close(fd)
+    try:
+        with rasterio.open(tmp_path, "w", **profile) as dst:
+            dst.write(band, 1)
+            dst.set_band_description(1, "provenance_mask")
+            dst.update_tags(
+                SOURCE="HeraOculus Raster Interpolation Laboratory",
+                PROVENANCE_ENCODING=str(prov_encoding),
+            )
+        os.replace(tmp_path, output_path)
+    except Exception:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 # ---------------------------------------------------------------------------

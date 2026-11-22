@@ -214,6 +214,9 @@ export const InterpolationLab: React.FC<InterpolationLabProps> = ({ onClose }) =
           <ExportPanel
             stage={stage}
             result={result}
+            crs={rasterMeta?.crs ?? null}
+            transform={rasterMeta?.transform ?? null}
+            nodata={rasterMeta?.nodata ?? null}
             setStage={setStage}
           />
         </div>

@@ -441,9 +441,17 @@ class ExportRequest(BaseModel):
     include_provenance_band: bool = True
     include_quality_band: bool = True
 
+    # Which artifact to export: "full" = reconstructed + provenance + quality
+    # GeoTIFF; "provenance" = standalone provenance-mask GeoTIFF.
+    export_type: Literal["full", "provenance"] = Field(
+        default="full",
+        description="Type of export artifact to generate.",
+    )
+
     # Raster data (sent from frontend after interpolation)
-    reconstructed_array: list[list[Optional[float]]] = Field(
-        description="Reconstructed 2D array as nested lists (null = NoData)."
+    reconstructed_array: Optional[list[list[Optional[float]]]] = Field(
+        default=None,
+        description="Reconstructed 2D array as nested lists (null = NoData). Required for 'full' export."
     )
     provenance_mask: list[list[str]] = Field(
         description="Provenance class per pixel ('observed'|'interpolated'|'nodata'|'excluded')."

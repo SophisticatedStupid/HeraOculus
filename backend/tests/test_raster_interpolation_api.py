@@ -251,9 +251,52 @@ def test_interpolate_endpoint_temporal():
 # Export endpoint
 # ---------------------------------------------------------------------------
 
-def test_export_endpoint():
+def _roundtrip_export(resp, expect_count: int, expect_reconstructed: bool = True) -> dict:
+    """Assert an export response is a downloadable GeoTIFF and reopen it."""
+    assert resp.status_code == 200, resp.text
+    ct = resp.headers.get("content-type", "")
+    assert ct.startswith("image/tiff"), ct
+    # Content-Disposition must use a safe basename, never a server path.
+    cd = resp.headers.get("content-disposition", "")
+    assert "attachment" in cd
+    import re
+    m = re.search(r'filename="([^"]+)"', cd)
+    assert m, cd
+    assert "/" not in m.group(1) and "\\" not in m.group(1), m.group(1)
+
+    import os, tempfile
+    fd, path = tempfile.mkstemp(suffix=".tif")
+    os.close(fd)
+    try:
+        with open(path, "wb") as f:
+            f.write(resp.content)
+        with rasterio.open(path) as dst:
+            assert dst.width == 10 and dst.height == 10
+            assert dst.count == expect_count
+            assert dst.crs is not None and dst.crs.to_string() == "EPSG:32610"
+            assert dst.transform is not None
+            assert dst.nodata == -9999.0
+            band_names = list(dst.descriptions or [])
+            if expect_reconstructed:
+                assert "reconstructed_values" in band_names
+                recon = dst.read(1).astype(float)
+                prov_band = 2
+            else:
+                recon = None
+                prov_band = 1
+            assert "provenance_mask" in band_names
+            prov = dst.read(prov_band).astype(float)
+            # Provenance codes: 1=observed, 2=interpolated, 3=nodata, 4=excluded
+            codes = set(np.unique(prov).tolist())
+            assert codes.issubset({1, 2, 3, 4}), codes
+            return {"recon": recon, "prov": prov}
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
+
+
+def test_export_endpoint_full_geotiff():
     arr = _make_hole_array()
-    # First interpolate
     interp_payload = {
         "data": _array_to_payload(arr),
         "method": "nearest_neighbor",
@@ -264,7 +307,6 @@ def test_export_endpoint():
     assert interp_resp.status_code == 200
     interp_data = interp_resp.json()
 
-    # Then export
     export_payload = {
         "output_filename": "test_export.tif",
         "nodata": -9999.0,
@@ -278,11 +320,94 @@ def test_export_endpoint():
         "method": "nearest_neighbor",
     }
     resp = client.post("/api/v1/rasters/interpolate/export", json=export_payload)
+    # save_provenance_geotiff always writes 3 bands (quality band is
+    # nodata-filled when no quality data was calculated).
+    info = _roundtrip_export(resp, expect_count=3)
+
+    # Reconstructed values (band 1) match the interpolation output.
+    recon = info["recon"]
+    expected_recon = np.array(
+        [[-9999.0 if v is None else float(v) for v in row]
+         for row in interp_data["reconstructed"]],
+        dtype=float,
+    )
+    np.testing.assert_array_equal(recon, expected_recon)
+
+    # Provenance band: observed -> 1, interpolated -> 2.
+    prov = info["prov"]
+    observed = int(np.sum(prov == 1))
+    interpolated = int(np.sum(prov == 2))
+    assert observed == 84
+    assert interpolated == 16
+    assert int(np.sum(prov == 3)) == 0
+    assert int(np.sum(prov == 4)) == 0
+
+
+def test_export_endpoint_provenance_only():
+    arr = _make_hole_array()
+    interp_payload = {
+        "data": _array_to_payload(arr),
+        "method": "nearest_neighbor",
+        "raster_type": "continuous",
+        "band_index": 1,
+    }
+    interp_resp = client.post("/api/v1/rasters/interpolate", json=interp_payload)
+    assert interp_resp.status_code == 200
+    interp_data = interp_resp.json()
+
+    export_payload = {
+        "output_filename": "prov_only.tif",
+        "nodata": -9999.0,
+        "export_type": "provenance",
+        "provenance_mask": interp_data["provenance_mask"],
+        "crs": "EPSG:32610",
+        "transform": {"a": 10, "b": 0, "c": 500000, "d": 0, "e": -10, "f": 5000000},
+        "method": "nearest_neighbor",
+    }
+    resp = client.post("/api/v1/rasters/interpolate/export", json=export_payload)
+    _roundtrip_export(resp, expect_count=1, expect_reconstructed=False)
+
+
+def test_export_endpoint_unsafe_filename_still_safe():
+    arr = _make_hole_array()
+    interp_payload = {
+        "data": _array_to_payload(arr),
+        "method": "nearest_neighbor",
+        "raster_type": "continuous",
+        "band_index": 1,
+    }
+    interp_resp = client.post("/api/v1/rasters/interpolate", json=interp_payload)
+    assert interp_resp.status_code == 200
+    interp_data = interp_resp.json()
+
+    export_payload = {
+        # Path-traversal attempt: must be reduced to a safe basename.
+        "output_filename": "../../../outside/evil.tif",
+        "nodata": -9999.0,
+        "include_provenance_band": True,
+        "include_quality_band": False,
+        "reconstructed_array": interp_data["reconstructed"],
+        "provenance_mask": interp_data["provenance_mask"],
+        "crs": "EPSG:32610",
+        "transform": {"a": 10, "b": 0, "c": 500000, "d": 0, "e": -10, "f": 5000000},
+        "method": "nearest_neighbor",
+    }
+    resp = client.post("/api/v1/rasters/interpolate/export", json=export_payload)
     assert resp.status_code == 200
-    data = resp.json()
-    assert data["filename"] == "test_export.tif"
-    assert data["bands"] == 3
-    assert data["crs"] == "EPSG:32610"
+    cd = resp.headers.get("content-disposition", "")
+    assert 'filename="evil.tif"' in cd, cd
+    # Body must still be a valid GeoTIFF (quality band is nodata-filled).
+    import os, tempfile
+    fd, path = tempfile.mkstemp(suffix=".tif")
+    os.close(fd)
+    try:
+        with open(path, "wb") as f:
+            f.write(resp.content)
+        with rasterio.open(path) as dst:
+            assert dst.count == 3  # reconstructed + provenance + quality
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
 
 
 def test_export_endpoint_invalid_transform():
