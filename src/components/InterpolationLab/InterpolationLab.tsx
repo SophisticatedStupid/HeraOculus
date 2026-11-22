@@ -41,6 +41,22 @@ export const InterpolationLab: React.FC<InterpolationLabProps> = ({ onClose }) =
     handleValidate,
     handleExecute,
     handleRegenerate,
+    // dataset source
+    uploadMode,
+    setUploadMode,
+    selectedFile,
+    selectedFileError,
+    handleSelectFile,
+    handleRemoveFile,
+    // temporal
+    temporalObservations,
+    temporalCube,
+    temporalTimes,
+    uploadError,
+    setUploadError,
+    handleAddTemporalObservation,
+    handleRemoveTemporalObservation,
+    handleClearTemporalObservations,
     currentMethodInfo,
     currentIndex,
     stageOrder,
@@ -127,9 +143,23 @@ export const InterpolationLab: React.FC<InterpolationLabProps> = ({ onClose }) =
             rasterData={rasterData ?? []}
             rasterMeta={rasterMeta}
             isLoading={isLoading}
+            uploadMode={uploadMode}
+            selectedFile={selectedFile}
+            selectedFileError={selectedFileError}
             handleInspect={handleInspect}
             handleRegenerate={handleRegenerate}
+            handleSelectFile={handleSelectFile}
+            handleRemoveFile={handleRemoveFile}
+            setUploadMode={setUploadMode}
             setStage={setStage}
+            temporalObservations={temporalObservations}
+            temporalCube={temporalCube}
+            temporalTimes={temporalTimes}
+            uploadError={uploadError}
+            setUploadError={setUploadError}
+            handleAddTemporalObservation={handleAddTemporalObservation}
+            handleRemoveTemporalObservation={handleRemoveTemporalObservation}
+            handleClearTemporalObservations={handleClearTemporalObservations}
           />
           <InspectMissingPanel
             stage={stage}
