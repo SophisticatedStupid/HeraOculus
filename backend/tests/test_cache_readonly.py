@@ -9,10 +9,28 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+import pytest
+
 from app.main import app
 from app.services import gridded_climate_service as gcs
 
 client = TestClient(app)
+
+
+def _reset_cache_state():
+    """Reset module-level cache state so tests never leak a disabled cache
+    into other test files (order-independent)."""
+    gcs._CACHE_DIR = None
+    gcs._CACHE_DISABLED = False
+
+
+@pytest.fixture(autouse=True)
+def _isolate_cache_state():
+    """Ensure cache module state is clean before and after each test so the
+    read-only simulation never leaks into unrelated tests."""
+    _reset_cache_state()
+    yield
+    _reset_cache_state()
 
 
 def _disable_cache(monkeypatch):
@@ -39,6 +57,7 @@ def test_cache_disabled_when_read_only(monkeypatch):
 def test_resolve_cache_dir_returns_none_when_read_only(monkeypatch):
     """_resolve_cache_dir returns None and disables caching when every
     candidate location is unwritable."""
+    _reset_cache_state()
     # Force every candidate to fail by monkeypatching Path.mkdir to raise.
     def fake_mkdir(*args, **kwargs):
         raise OSError("read-only filesystem")
@@ -54,3 +73,11 @@ def test_resolve_cache_dir_returns_none_when_read_only(monkeypatch):
     # get/set remain no-ops.
     assert gcs._cache_get("chirps", "p") is None
     gcs._cache_set("chirps", "p", b"data")
+
+
+def test_app_serves_after_cache_disabled(monkeypatch):
+    """Even after caching has been disabled, the app imports and serves."""
+    _disable_cache(monkeypatch)
+    resp = client.get("/api/v1/health")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ok"

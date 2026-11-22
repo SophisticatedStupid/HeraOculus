@@ -214,9 +214,9 @@
       "method": "Hamed-Rao MK",
       "series": "synthetic_none",
       "statistic": "Z",
-      "ours": 0.01313792,
+      "ours": 0.01143148,
       "reference": 0.01143148,
-      "abs_diff": 0.00170644,
+      "abs_diff": 0.0,
       "tolerance": 0.05,
       "status": "PASS"
     },
@@ -224,9 +224,9 @@
       "method": "Hamed-Rao MK",
       "series": "synthetic_none",
       "statistic": "p",
-      "ours": 0.98951776,
+      "ours": 0.9908792,
       "reference": 0.9908792,
-      "abs_diff": 0.00136144,
+      "abs_diff": 0.0,
       "tolerance": 0.02,
       "status": "PASS"
     },
@@ -234,11 +234,11 @@
       "method": "Hamed-Rao MK",
       "series": "synthetic_none",
       "statistic": "var_S_ratio",
-      "ours": 0.7864584,
+      "ours": 1.03878189,
       "reference": 1.03878189,
-      "abs_diff": 0.25232349,
+      "abs_diff": 0.0,
       "tolerance": 0.1,
-      "status": "FAIL"
+      "status": "PASS"
     },
     {
       "method": "Mann-Kendall",
@@ -374,19 +374,19 @@
       "method": "Hamed-Rao MK",
       "series": "synthetic_ar1_trend",
       "statistic": "Z",
-      "ours": 2.76708838,
+      "ours": 3.51233285,
       "reference": 3.51233285,
-      "abs_diff": 0.74524447,
+      "abs_diff": 0.0,
       "tolerance": 0.05,
-      "status": "FAIL"
+      "status": "PASS"
     },
     {
       "method": "Hamed-Rao MK",
       "series": "synthetic_ar1_trend",
       "statistic": "p",
-      "ours": 0.00565594,
+      "ours": 0.00044419,
       "reference": 0.00044419,
-      "abs_diff": 0.00521175,
+      "abs_diff": 0.0,
       "tolerance": 0.02,
       "status": "PASS"
     },
@@ -394,11 +394,11 @@
       "method": "Hamed-Rao MK",
       "series": "synthetic_ar1_trend",
       "statistic": "var_S_ratio",
-      "ours": 4.23936331,
+      "ours": 2.63120913,
       "reference": 2.63120913,
-      "abs_diff": 1.60815417,
+      "abs_diff": 0.0,
       "tolerance": 0.1,
-      "status": "FAIL"
+      "status": "PASS"
     },
     {
       "method": "Mann-Kendall",
@@ -611,36 +611,5 @@
       "status": "PASS"
     }
   ],
-  "discrepancies": [
-    {
-      "method": "Hamed-Rao MK",
-      "series": "synthetic_none",
-      "statistic": "var_S_ratio",
-      "ours": 0.7864584,
-      "reference": 1.03878189,
-      "abs_diff": 0.25232349,
-      "tolerance": 0.1,
-      "status": "FAIL"
-    },
-    {
-      "method": "Hamed-Rao MK",
-      "series": "synthetic_ar1_trend",
-      "statistic": "Z",
-      "ours": 2.76708838,
-      "reference": 3.51233285,
-      "abs_diff": 0.74524447,
-      "tolerance": 0.05,
-      "status": "FAIL"
-    },
-    {
-      "method": "Hamed-Rao MK",
-      "series": "synthetic_ar1_trend",
-      "statistic": "var_S_ratio",
-      "ours": 4.23936331,
-      "reference": 2.63120913,
-      "abs_diff": 1.60815417,
-      "tolerance": 0.1,
-      "status": "FAIL"
-    }
-  ]
+  "discrepancies": []
 }

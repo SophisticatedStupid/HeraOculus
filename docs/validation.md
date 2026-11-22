@@ -1,6 +1,6 @@
 # Trend / Extreme-Value Cross-Validation
 
-Generated: 2026-11-21T12:31:18.788613+00:00Z
+Generated: 2026-11-22T10:19:37.338183+00:00Z
 
 ## Scope
 
@@ -56,9 +56,9 @@ with status `FAIL` is a genuine discrepancy requiring investigation.
 | Mann-Kendall | synthetic_none | S | 2.0 | 2.0 | 0.0 | 0.0 | PASS |
 | Mann-Kendall | synthetic_none | var_S | 7366.66666667 | 7366.66666667 | 0.0 | 1e-09 | PASS |
 | Theil-Sen | synthetic_none | slope | 0.00017866 | 0.00017866 | 0.0 | 1e-09 | PASS |
-| Hamed-Rao MK | synthetic_none | Z | 0.01313792 | 0.01143148 | 0.00170644 | 0.05 | PASS |
-| Hamed-Rao MK | synthetic_none | p | 0.98951776 | 0.9908792 | 0.00136144 | 0.02 | PASS |
-| Hamed-Rao MK | synthetic_none | var_S_ratio | 0.7864584 | 1.03878189 | 0.25232349 | 0.1 | FAIL |
+| Hamed-Rao MK | synthetic_none | Z | 0.01143148 | 0.01143148 | 0.0 | 0.05 | PASS |
+| Hamed-Rao MK | synthetic_none | p | 0.9908792 | 0.9908792 | 0.0 | 0.02 | PASS |
+| Hamed-Rao MK | synthetic_none | var_S_ratio | 1.03878189 | 1.03878189 | 0.0 | 0.1 | PASS |
 | Mann-Kendall | synthetic_tied | Z | 8.50009878 | 8.50009878 | 0.0 | 1e-06 | PASS |
 | Mann-Kendall | synthetic_tied | p | 0.0 | 0.0 | 0.0 | 1e-06 | PASS |
 | Mann-Kendall | synthetic_tied | S | 727.0 | 727.0 | 0.0 | 0.0 | PASS |
@@ -72,9 +72,9 @@ with status `FAIL` is a genuine discrepancy requiring investigation.
 | Mann-Kendall | synthetic_ar1_trend | S | 490.0 | 490.0 | 0.0 | 0.0 | PASS |
 | Mann-Kendall | synthetic_ar1_trend | var_S | 7366.66666667 | 7366.66666667 | 0.0 | 1e-09 | PASS |
 | Theil-Sen | synthetic_ar1_trend | slope | 0.16433292 | 0.16433292 | 0.0 | 1e-09 | PASS |
-| Hamed-Rao MK | synthetic_ar1_trend | Z | 2.76708838 | 3.51233285 | 0.74524447 | 0.05 | FAIL |
-| Hamed-Rao MK | synthetic_ar1_trend | p | 0.00565594 | 0.00044419 | 0.00521175 | 0.02 | PASS |
-| Hamed-Rao MK | synthetic_ar1_trend | var_S_ratio | 4.23936331 | 2.63120913 | 1.60815417 | 0.1 | FAIL |
+| Hamed-Rao MK | synthetic_ar1_trend | Z | 3.51233285 | 3.51233285 | 0.0 | 0.05 | PASS |
+| Hamed-Rao MK | synthetic_ar1_trend | p | 0.00044419 | 0.00044419 | 0.0 | 0.02 | PASS |
+| Hamed-Rao MK | synthetic_ar1_trend | var_S_ratio | 2.63120913 | 2.63120913 | 0.0 | 0.1 | PASS |
 | Mann-Kendall | synthetic_short | Z | 0.0 | 0.0 | 0.0 | 1e-06 | PASS |
 | Mann-Kendall | synthetic_short | p | 1.0 | 1.0 | 0.0 | 1e-06 | PASS |
 | Mann-Kendall | synthetic_short | S | 1.0 | 1.0 | 0.0 | 0.0 | PASS |
@@ -100,19 +100,8 @@ with status `FAIL` is a genuine discrepancy requiring investigation.
 ## Summary
 
 - Comparisons run: 61
-- Passed: 58
-- Failed (discrepancy): 3
+- Passed: 61
+- Failed (discrepancy): 0
 - Skipped: 0
 
-### DISCREPANCIES (flagged, not suppressed)
-
-The following comparisons exceed their documented tolerance. Tolerances
-were NOT adjusted; these require code investigation before release.
-
-| Method | Series | Statistic | Ours | Reference | Abs diff | Tolerance |
-|--------|--------|-----------|------|-----------|----------|-----------|
-| Hamed-Rao MK | synthetic_none | var_S_ratio | 0.7864584 | 1.03878189 | 0.25232349 | 0.1 |
-| Hamed-Rao MK | synthetic_ar1_trend | Z | 2.76708838 | 3.51233285 | 0.74524447 | 0.05 |
-| Hamed-Rao MK | synthetic_ar1_trend | var_S_ratio | 4.23936331 | 2.63120913 | 1.60815417 | 0.1 |
-
-> **Result: FAIL** — discrepancies detected. Do not merge until resolved.
+> **Result: PASS** — all comparisons within documented tolerance.
