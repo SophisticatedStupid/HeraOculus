@@ -139,7 +139,8 @@ def cleanup_temp_file(path: Optional[str]) -> None:
 # Heavy task execution (process-based, terminable on timeout)
 # ---------------------------------------------------------------------------
 
-_HEAVY_MAX_CONCURRENT = int(os.getenv("HERAOCULUS_MAX_CONCURRENT_HEAVY_JOBS", "4"))
+_heavy_max_concurrent_raw = os.getenv("HERAOCULUS_MAX_CONCURRENT_HEAVY_JOBS", "4").strip()
+_HEAVY_MAX_CONCURRENT = int(_heavy_max_concurrent_raw) if _heavy_max_concurrent_raw else 4
 _heavy_semaphores: "dict[asyncio.AbstractEventLoop, asyncio.Semaphore]" = {}
 _heavy_semaphores_lock = threading.Lock()
 _active_heavy: "set[mp.Process]" = set()

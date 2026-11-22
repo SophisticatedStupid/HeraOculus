@@ -18,6 +18,16 @@ from dataclasses import dataclass
 from typing import Optional
 
 
+def _env_optional(name: str) -> Optional[str]:
+    """Return an env var stripped of surrounding whitespace, or None when unset,
+    empty, or whitespace-only.  Blank credentials behave like unset so a
+    deployment that ships ``VAR=""`` does not accidentally hold an empty secret."""
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return None
+    return value.strip()
+
+
 @dataclass(frozen=True)
 class CredentialSnapshot:
     """Immutable snapshot of credentials resolved at process start."""
@@ -40,13 +50,13 @@ class AuthStore:
 
     def __init__(self) -> None:
         self._snapshot = CredentialSnapshot(
-            earthdata_token=os.getenv("EARTHDATA_TOKEN") or None,
-            earthdata_username=os.getenv("EARTHDATA_USERNAME") or None,
-            earthdata_password=os.getenv("EARTHDATA_PASSWORD") or None,
-            firms_map_key=os.getenv("NASA_FIRMS_MAP_KEY") or None,
-            cds_api_key=os.getenv("CDS_API_KEY") or None,
-            cdsapi_key=os.getenv("CDSAPI_KEY") or None,
-            destine_pat=os.getenv("DESTINE_PAT") or None,
+            earthdata_token=_env_optional("EARTHDATA_TOKEN"),
+            earthdata_username=_env_optional("EARTHDATA_USERNAME"),
+            earthdata_password=_env_optional("EARTHDATA_PASSWORD"),
+            firms_map_key=_env_optional("NASA_FIRMS_MAP_KEY"),
+            cds_api_key=_env_optional("CDS_API_KEY"),
+            cdsapi_key=_env_optional("CDSAPI_KEY"),
+            destine_pat=_env_optional("DESTINE_PAT"),
         )
 
     def get_firms_map_key(self) -> Optional[str]:

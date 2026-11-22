@@ -102,6 +102,60 @@ def test_dev_mode_allows_without_key(monkeypatch):
     assert resp.status_code != 401, resp.text
 
 
+def test_blank_api_key_keeps_dev_mode(monkeypatch):
+    """A blank HERAOCULUS_API_KEY ("") behaves like unset: dev mode, no 401."""
+    monkeypatch.setenv("HERAOCULUS_API_KEY", "")
+    resp = client.post("/api/v1/stats/sarima")
+    assert resp.status_code != 401, resp.text
+
+
+def test_whitespace_api_key_keeps_dev_mode(monkeypatch):
+    """A whitespace-only HERAOCULUS_API_KEY behaves like unset: dev mode."""
+    monkeypatch.setenv("HERAOCULUS_API_KEY", "   ")
+    resp = client.post("/api/v1/stats/sarima")
+    assert resp.status_code != 401, resp.text
+
+
+def test_real_key_requires_header_and_allows_with_it(monkeypatch):
+    """A real configured key returns 401 without the header and 200 with it."""
+    monkeypatch.setenv("HERAOCULUS_API_KEY", _API_KEY)
+    # No header -> 401.
+    resp = client.post("/api/v1/stats/sarima")
+    assert resp.status_code == 401, resp.text
+    # Correct header -> allowed past auth (not 401).
+    resp = client.post(
+        "/api/v1/stats/sarima",
+        headers=_headers(with_key=True),
+        json={
+            "dates": [f"2020-{m:02d}" for m in range(1, 25)],
+            "values": [float(m) for m in range(24)],
+            "forecast_steps": 3,
+        },
+    )
+    assert resp.status_code != 401, resp.text
+
+
+def test_blank_cors_origins_denies_all_and_does_not_crash(monkeypatch):
+    """A blank CORS_ORIGINS yields an empty allow-list (deny-all), not allow-all,
+    and the app still serves requests without crashing."""
+    import importlib
+
+    import app.config as config_module
+
+    monkeypatch.setenv("CORS_ORIGINS", "")
+    importlib.reload(config_module)
+    assert config_module.settings.cors_origins == [], config_module.settings.cors_origins
+
+    # Whitespace-only is also treated as empty.
+    monkeypatch.setenv("CORS_ORIGINS", "   ")
+    importlib.reload(config_module)
+    assert config_module.settings.cors_origins == [], config_module.settings.cors_origins
+
+    # The app still serves requests (no crash).
+    resp = client.get("/api/v1/health")
+    assert resp.status_code == 200, resp.text
+
+
 # ---------------------------------------------------------------------------
 # Rate limiting
 # ---------------------------------------------------------------------------

@@ -161,18 +161,27 @@ class RateLimitMiddleware(SlowAPIMiddleware):
             response = limiter._inject_headers(response, request.state.view_rate_limit)
         return response
 
+def _configured_api_key() -> Optional[str]:
+    """Return the configured API key, or None when dev mode is active.
+
+    An unset, empty, or whitespace-only ``HERAOCULUS_API_KEY`` all mean dev
+    mode: the key is not configured and requests are allowed without a header.
+    This prevents a blank value (e.g. ``HERAOCULUS_API_KEY=""``) from silently
+    enabling auth with an empty key.
+    """
+    value = os.getenv("HERAOCULUS_API_KEY")
+    if value is None or not value.strip():
+        return None
+    return value.strip()
+
+
 # Log exactly once at startup whether auth is enabled.
-if os.getenv("HERAOCULUS_API_KEY") is None:
+if _configured_api_key() is None:
     logger.warning(
         "HERAOCULUS_API_KEY is not set: running in DEV mode without API-key "
         "authentication. Set HERAOCULUS_API_KEY to require X-API-Key on /api/v1/* "
         "(except /api/v1/health)."
     )
-
-
-def _configured_api_key() -> Optional[str]:
-    """Return the configured API key, or None when dev mode is active."""
-    return os.getenv("HERAOCULUS_API_KEY")
 
 
 async def require_api_key(

@@ -46,9 +46,10 @@ jobs:
     timeout-minutes: 10
     env:
       # Keep every credential unset so the backend runs in dev mode and no
-      # test hits the live network. The network-backed validation test is
-      # excluded via ``-m "not network"`` (see backend/pytest.ini).
-      HERAOCULUS_API_KEY: ""
+      # test hits the live network.  The security code treats blank values as
+      # unset, so an explicitly empty HERAOCULUS_API_KEY still runs dev mode.
+      # The network-backed validation test is excluded via ``-m "not network"``
+      # (see backend/pytest.ini).
       EARTHDATA_TOKEN: ""
       EARTHDATA_USERNAME: ""
       EARTHDATA_PASSWORD: ""
