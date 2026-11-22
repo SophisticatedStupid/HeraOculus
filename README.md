@@ -1,5 +1,7 @@
 # HeraOculus
 
+[![CI](https://github.com/SophisticatedStupid/HeraOculus/actions/workflows/ci.yml/badge.svg)](https://github.com/SophisticatedStupid/HeraOculus/actions/workflows/ci.yml)
+
 Earth observation analytics platform: trend detection, changepoint analysis, extreme-value statistics, raster change detection, and Earthdata/NASA data access.
 
 ## Contents
@@ -250,8 +252,29 @@ npm run build         # tsc && vite build
 | `CDSAPI_KEY` | *(unset)* | Alternate Copernicus CDS API key name (optional) |
 | `DESTINE_PAT` | *(unset)* | DestinE Earth Data Hub PAT for ERA5-Land ARCO Zarr (optional) |
 | `VITE_BACKEND_URL` | `http://localhost:8000` | Frontend backend URL (Vite env, prefix `VITE_`) |
+| `HERAOCULUS_API_KEY` | *(unset)* | Server-only API key. When set, every /api/v1/* route except /health requires X-API-Key. Injected by the Vercel proxy; never embedded in the frontend bundle. |
+| `TRUST_PROXY_HEADERS` | `false` | Trust X-Forwarded-For for rate-limit keying when behind a trusted reverse proxy (e.g. Vercel). Set `true` only in production behind a proxy that overwrites X-Forwarded-For from the TCP connection. |
+| `BACKEND_URL` | *(unset)* | Server-only backend URL used by the Vercel proxy function to forward /api/v1/* requests. Not prefixed with `VITE_`, so it is never exposed to the browser. |
 
-Edit `.env` (backend) for server-side variables. `VITE_BACKEND_URL` is a Vite frontend variable and must be prefixed with `VITE_` in `.env`.
+Edit `.env` (backend) for server-side variables. `VITE_BACKEND_URL` is a Vite frontend variable and must be prefixed with `VITE_` in `.env`. `HERAOCULUS_API_KEY`, `TRUST_PROXY_HEADERS`, and `BACKEND_URL` are backend/server-only variables.
+
+## API key & proxy architecture
+
+The backend enforces an `X-API-Key` header on all `/api/v1/*` routes (except `/health`) when `HERAOCULUS_API_KEY` is set. Because the key must never be embedded in the public frontend bundle, the frontend calls same-origin `/api/v1/*` in production and a Vercel serverless function (`api/index.ts`) proxies those requests to the backend, injecting `X-API-Key` server-side:
+
+```
+Browser → https://app.vercel.app/api/v1/* → api/index.ts (adds X-API-Key, forwards X-Forwarded-For) → https://backend:8000/api/v1/*
+```
+
+This design:
+- Keeps the API key out of client-side code (no `VITE_*` secret).
+- Forwards the real client IP via `X-Forwarded-For` (Vercel populates it from the TCP connection), so per-client rate limiting works behind the proxy.
+- Allowlists only `/api/v1/*` paths and `GET`/`POST` methods in the proxy.
+- Streams request/response bodies, so multipart file uploads up to 35 MB work.
+
+**This is not user authentication.** The API key protects the backend from direct, unauthenticated access, but every browser user shares the same key. It does not identify individual users. Set `TRUST_PROXY_HEADERS=true` on the backend in production so the rate limiter keys on the real client IP rather than the proxy's IP.
+
+In local development the Vite dev proxy (`/api` → `http://127.0.0.1:8000`) is used and the backend typically runs without `HERAOCULUS_API_KEY` (dev mode). The runtime `localStorage` backend-URL override is disabled in production builds (`import.meta.env.DEV` only).
 
 ## Assumptions & limitations
 

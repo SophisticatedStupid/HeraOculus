@@ -26,17 +26,12 @@ class ProvenanceMetadata(BaseModel):
 class AuthStatusResponse(BaseModel):
     earthdata_configured: bool
     earthdata_source: str
-    earthdata_username_hint: Optional[str] = None
-    earthdata_token_hint: Optional[str] = None
     firms_configured: bool
     firms_source: str
-    firms_key_hint: Optional[str] = None
     cds_configured: bool
     cds_source: str
-    cds_key_hint: Optional[str] = None
     destine_configured: bool
     destine_source: str
-    destine_pat_hint: Optional[str] = None
     keyless_feeds_available: list[str]
 
 

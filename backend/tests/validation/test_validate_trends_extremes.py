@@ -28,17 +28,17 @@ import urllib.request
 from pathlib import Path
 
 import numpy as np
+import pytest
 from scipy import stats
 
-# Ensure ``app`` (the backend package) is importable regardless of CWD.
+pytestmark = pytest.mark.network
+
 _BACKEND = Path(__file__).resolve().parents[2]
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
 from app.services import spatial_fdr_service as svc  # noqa: E402
 from app.services import extreme_service as evs  # noqa: E402
-
-import pymannkendall as mk  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Documented tolerances (do NOT adjust to hide a mismatch).
@@ -422,6 +422,14 @@ def write_markdown(out_path: Path) -> None:
 
 
 def main() -> int:
+    global mk
+    try:
+        import pymannkendall as _mk  # type: ignore[import-not-found]
+    except ImportError:
+        # Optional validation dependency; the network-backed comparison is
+        # excluded from the default CI run via the ``network`` marker.
+        pytest.skip("pymannkendall is not installed")
+    mk = _mk
     series = _make_series()
     _run_mk_sen_hrao(series)
 
@@ -452,6 +460,16 @@ def main() -> int:
         return 1
     print("\nVALIDATION PASSED: all comparisons within documented tolerance.")
     return 0
+
+
+@pytest.mark.network
+def test_validation_cross_check_synthetic_and_real():
+    """Cross-validate trend/extreme implementations; hits live NOAA network.
+
+    Excluded from the default CI run via ``-m "not network"`` because it
+    fetches a real public dataset (NOAA Mauna Loa CO2).
+    """
+    assert main() == 0
 
 
 if __name__ == "__main__":

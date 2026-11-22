@@ -24,10 +24,10 @@ Missing credentials or an out-of-coverage query yield an explicit
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Request
 
 from ..schemas import GriddedSeriesRequest, GriddedSeriesResponse
-from ..security import require_api_key
+from ..security import LIMIT_UPSTREAM, limiter, require_api_key
 from ..services.auth_store import auth_store
 from ..services.gridded_climate_service import (
     GriddedUnavailable,
@@ -62,7 +62,9 @@ def _require_credentials(configured: bool, dataset: str, what: str) -> None:
 
 
 @router.post("/{dataset}", response_model=GriddedSeriesResponse)
+@limiter.limit(LIMIT_UPSTREAM)
 def gridded_series(
+    request: Request,
     dataset: str = Path(
         ...,
         description="Gridded dataset: chirps | imerg | era5-land",

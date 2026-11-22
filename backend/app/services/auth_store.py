@@ -30,16 +30,6 @@ class CredentialSnapshot:
     destine_pat: Optional[str] = None
 
 
-def _mask_secret(value: Optional[str]) -> Optional[str]:
-    """Return a masked hint for logging/status without exposing the secret."""
-    if not value:
-        return None
-    cleaned = value.strip()
-    if len(cleaned) <= 6:
-        return "*" * len(cleaned)
-    return f"{cleaned[:3]}...{cleaned[-3:]}"
-
-
 class AuthStore:
     """Thread-safe read-only holder resolving credentials from environment variables.
 
@@ -104,17 +94,12 @@ class AuthStore:
         return {
             "earthdata_configured": bool(edl_token or (edl_user and edl_pass)),
             "earthdata_source": edl_source,
-            "earthdata_username_hint": _mask_secret(edl_user),
-            "earthdata_token_hint": _mask_secret(edl_token),
             "firms_configured": bool(firms_key),
             "firms_source": firms_source,
-            "firms_key_hint": _mask_secret(firms_key),
             "cds_configured": bool(cds_key),
             "cds_source": cds_source,
-            "cds_key_hint": _mask_secret(cds_key),
             "destine_configured": bool(destine_pat),
             "destine_source": destine_source,
-            "destine_pat_hint": _mask_secret(destine_pat),
             "keyless_feeds_available": [
                 "NASA EONET v3 Wildfires & Events",
                 "NASA ASF SAR Granule Search",

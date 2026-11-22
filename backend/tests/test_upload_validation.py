@@ -12,6 +12,7 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
+import pytest
 import rasterio
 from fastapi.testclient import TestClient
 from rasterio.transform import from_bounds
@@ -24,11 +25,21 @@ from app.routers.utils import (
     read_checked_upload,
     validate_upload_signature,
 )
+from app.security import limiter
 
 client = TestClient(app)
 
 MAX_BYTES = settings.max_upload_bytes
 MB = 1024 * 1024
+
+
+@pytest.fixture(autouse=True)
+def _reset_limiter():
+    """Reset slowapi storage around each test so rate-limit counters never leak
+    between tests now that endpoints are rate limited."""
+    limiter.reset()
+    yield
+    limiter.reset()
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -246,21 +257,25 @@ def test_concurrent_uploads():
             files={"file": (f"bad_{idx}.nc", _make_bad_netcdf_bytes(), "application/x-netcdf")},
         )
 
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        futures = []
-        for i in range(8):
-            futures.append(executor.submit(upload_geotiff, i))
-            futures.append(executor.submit(upload_bad, i))
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = [executor.submit(upload_geotiff, i) for i in range(4)]
+        results = [f.result() for f in as_completed(futures)]
 
-        results = []
-        for future in as_completed(futures):
-            results.append(future.result())
+    # Within the per-minute upload bucket, concurrent valid uploads all succeed.
+    assert all(r.status_code == 200 for r in results), [
+        r.status_code for r in results
+    ]
 
-    # All should complete without errors
-    good = [r for r in results if r.status_code == 200]
-    bad = [r for r in results if r.status_code == 400]
-    assert len(good) == 8, f"Expected 8 successful uploads, got {len(good)}"
-    assert len(bad) == 8, f"Expected 8 rejected uploads, got {len(bad)}"
+    # The bucket now has 4 of 5 used: the next upload succeeds, the one after
+    # is rate limited rather than erroring.
+    assert upload_geotiff(4).status_code == 200
+    resp = upload_geotiff(5)
+    assert resp.status_code == 429, resp.text
+
+    # Malformed uploads are rejected by validation (400) or rate limiting (429),
+    # never by a processing error (500).
+    resp = upload_bad(0)
+    assert resp.status_code in {400, 429}, resp.text
 
 
 def test_validate_upload_signature_geotiff():

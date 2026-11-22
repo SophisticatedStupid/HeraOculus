@@ -10,7 +10,7 @@ from ..schemas import (
     SarimaRequest,
     SpatialFdrRequest,
 )
-from ..security import limiter, require_api_key
+from ..security import LIMIT_HEAVY, limiter, require_api_key
 from ..services.bayesian_service import run_bayesian_mcmc
 from ..services.extreme_service import run_extreme_value_analysis
 from ..services.forecast_service import run_sarima_forecast
@@ -24,7 +24,7 @@ router = APIRouter(
 
 
 @router.post("/sarima")
-@limiter.limit("5/minute")
+@limiter.limit(LIMIT_HEAVY)
 def sarima_forecast(request: Request, payload: SarimaRequest) -> dict:
     try:
         return run_sarima_forecast(
@@ -43,7 +43,7 @@ def sarima_forecast(request: Request, payload: SarimaRequest) -> dict:
 
 
 @router.post("/bayesian-mcmc")
-@limiter.limit("5/minute")
+@limiter.limit(LIMIT_HEAVY)
 def bayesian_mcmc(request: Request, payload: BayesianMcmcRequest) -> dict:
     try:
         return run_bayesian_mcmc(
@@ -60,7 +60,7 @@ def bayesian_mcmc(request: Request, payload: BayesianMcmcRequest) -> dict:
 
 
 @router.post("/extreme-value")
-@limiter.limit("5/minute")
+@limiter.limit(LIMIT_HEAVY)
 def extreme_value(request: Request, payload: ExtremeValueRequest) -> dict:
     try:
         return run_extreme_value_analysis(
@@ -77,7 +77,7 @@ def extreme_value(request: Request, payload: ExtremeValueRequest) -> dict:
 
 
 @router.post("/spatial-fdr")
-@limiter.limit("5/minute")
+@limiter.limit(LIMIT_HEAVY)
 def spatial_fdr(request: Request, payload: SpatialFdrRequest) -> dict:
     try:
         return run_spatial_fdr_analysis(

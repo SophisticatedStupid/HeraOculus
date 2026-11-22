@@ -30,11 +30,8 @@ export interface Phase2SeriesHandoff {
 export interface AuthStatusResponse {
   earthdata_configured: boolean;
   earthdata_source: string;
-  earthdata_username_hint?: string | null;
-  earthdata_token_hint?: string | null;
   firms_configured: boolean;
   firms_source: string;
-  firms_key_hint?: string | null;
   keyless_feeds_available: string[];
 }
 
@@ -549,6 +546,13 @@ export class Phase2OfflineError extends Error {
 }
 
 export function getBackendBaseUrl(): string {
+  // In production, always use same-origin relative URLs so requests route
+  // through the Vercel proxy function (/api/index), which injects the
+  // server-side X-API-Key. Never expose the backend URL or API key to the
+  // browser, and never honor a runtime URL override that could bypass the proxy.
+  if (!import.meta.env.DEV) {
+    return '';
+  }
   try {
     const stored = window.localStorage.getItem(BACKEND_URL_STORAGE_KEY)?.trim();
     if (stored) {

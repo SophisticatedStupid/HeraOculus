@@ -11,7 +11,7 @@ from ..schemas import (
     TraceGasRequest,
     VerticalProfileRequest,
 )
-from ..security import limiter, require_api_key
+from ..security import LIMIT_HEAVY, LIMIT_UPSTREAM, limiter, require_api_key
 from ..services.earthdata_service import (
     extract_netcdf_subset,
     get_trace_gas_analytics,
@@ -38,7 +38,7 @@ NETCDF_PROCESS_TIMEOUT = 120.0
 
 
 @router.post("/granules")
-@limiter.limit("5/minute")
+@limiter.limit(LIMIT_UPSTREAM)
 def search_granules(request: Request, payload: EarthdataGranuleRequest) -> dict:
     return search_earthdata_granules(
         short_name=payload.short_name,
@@ -50,7 +50,7 @@ def search_granules(request: Request, payload: EarthdataGranuleRequest) -> dict:
 
 
 @router.post("/appeears-point")
-@limiter.limit("5/minute")
+@limiter.limit(LIMIT_UPSTREAM)
 def submit_appeears_point(request: Request, payload: AppeearsPointRequest) -> dict:
     return proxy_appeears_point_task(
         product=payload.product,
@@ -64,7 +64,8 @@ def submit_appeears_point(request: Request, payload: AppeearsPointRequest) -> di
 
 
 @router.post("/vertical-profile")
-def vertical_profile(payload: VerticalProfileRequest) -> dict:
+@limiter.limit(LIMIT_UPSTREAM)
+def vertical_profile(request: Request, payload: VerticalProfileRequest) -> dict:
     return get_vertical_pressure_profile(
         lat=payload.lat,
         lon=payload.lon,
@@ -75,7 +76,8 @@ def vertical_profile(payload: VerticalProfileRequest) -> dict:
 
 
 @router.post("/trace-gases")
-def trace_gases(payload: TraceGasRequest) -> dict:
+@limiter.limit(LIMIT_UPSTREAM)
+def trace_gases(request: Request, payload: TraceGasRequest) -> dict:
     return get_trace_gas_analytics(
         gas=payload.gas,
         lat=payload.lat,
@@ -87,7 +89,8 @@ def trace_gases(payload: TraceGasRequest) -> dict:
 
 
 @router.post("/netcdf/inspect")
-async def inspect_netcdf(file: UploadFile = File(...)) -> dict:
+@limiter.limit(LIMIT_HEAVY)
+async def inspect_netcdf(request: Request, file: UploadFile = File(...)) -> dict:
     path, filename = await read_checked_upload(file)
     validate_upload_signature(path, "netcdf_hdf5")
     try:
@@ -103,7 +106,9 @@ async def inspect_netcdf(file: UploadFile = File(...)) -> dict:
 
 
 @router.post("/netcdf/extract")
+@limiter.limit(LIMIT_HEAVY)
 async def extract_netcdf(
+    request: Request,
     file: UploadFile = File(...),
     variable: Optional[str] = Form(default=None),
     target_lat: Optional[float] = Form(default=None),

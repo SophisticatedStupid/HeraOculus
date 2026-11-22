@@ -291,7 +291,10 @@ def _hamed_rao_correction_factor(
         # year positions are 0..T-1 based on time index
         year_positions = np.where(valid)[0]
 
-        max_lag = min(12, max(1, n_cell // 4))
+        # Match the reference implementation (pymannkendall): consider all lags
+        # 1..n-1 rather than an arbitrary cap, so the Hamed-Rao variance factor
+        # agrees with the reference to rounding precision.
+        max_lag = n_cell - 1
         crit = 1.96 / np.sqrt(n_cell)
         correction_sum = 0.0
 

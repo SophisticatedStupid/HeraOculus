@@ -28,12 +28,21 @@ import { VariableSelector } from './components/VariableSelector';
 import { TimeSeriesChart } from './components/TimeSeriesChart';
 import { StatsSummaryCard } from './components/StatsSummaryCard';
 import { PlainEnglishSummary } from './components/PlainEnglishSummary';
-import { DetectiveMode } from './components/DetectiveMode';
-import { RegionalContrastView } from './components/RegionalContrastView';
-import { VariableEncyclopedia } from './components/VariableEncyclopedia';
-import { CustomDataUploader } from './components/CustomDataUploader';
 import { DataExportModal } from './components/DataExportModal';
 import { GeeScriptModal } from './components/GeeScriptModal';
+
+const DetectiveMode = React.lazy(() =>
+  import('./components/DetectiveMode').then((m) => ({ default: m.DetectiveMode }))
+);
+const RegionalContrastView = React.lazy(() =>
+  import('./components/RegionalContrastView').then((m) => ({ default: m.RegionalContrastView }))
+);
+const VariableEncyclopedia = React.lazy(() =>
+  import('./components/VariableEncyclopedia').then((m) => ({ default: m.VariableEncyclopedia }))
+);
+const CustomDataUploader = React.lazy(() =>
+  import('./components/CustomDataUploader').then((m) => ({ default: m.CustomDataUploader }))
+);
 import type { Phase2SeriesHandoff } from './services/phase2Api';
 import { hasGeeSupport } from './services/gee/datasetMap';
 
@@ -692,31 +701,55 @@ export const App: React.FC = () => {
         {/* MODE 2: DATA DETECTIVE (Guided Student Missions) */}
         {currentMode === 'detective' && (
           <div>
-            <DetectiveMode />
+            <React.Suspense fallback={
+              <div className="flex items-center justify-center p-16 text-silver-500 text-xs">
+                Loading detective mode...
+              </div>
+            }>
+              <DetectiveMode />
+            </React.Suspense>
           </div>
         )}
 
         {/* MODE 3: OPPOSITE TRENDS LAB */}
         {currentMode === 'contrast' && (
           <div>
-            <RegionalContrastView />
+            <React.Suspense fallback={
+              <div className="flex items-center justify-center p-16 text-silver-500 text-xs">
+                Loading contrast lab...
+              </div>
+            }>
+              <RegionalContrastView />
+            </React.Suspense>
           </div>
         )}
 
         {/* MODE 4: ENCYCLOPEDIA & MISSIONS DIRECTORY */}
         {currentMode === 'encyclopedia' && (
           <div>
-            <VariableEncyclopedia />
+            <React.Suspense fallback={
+              <div className="flex items-center justify-center p-16 text-silver-500 text-xs">
+                Loading encyclopedia...
+              </div>
+            }>
+              <VariableEncyclopedia />
+            </React.Suspense>
           </div>
         )}
 
         {/* MODE 5: CUSTOM DATA STUDIO & API */}
         {currentMode === 'upload' && (
           <div>
-            <CustomDataUploader
-              initialCoordinates={selectedRegion.coordinates}
-              onAnalyzeCustomData={handleAnalyzeCustomData}
-            />
+            <React.Suspense fallback={
+              <div className="flex items-center justify-center p-16 text-silver-500 text-xs">
+                Loading custom data studio...
+              </div>
+            }>
+              <CustomDataUploader
+                initialCoordinates={selectedRegion.coordinates}
+                onAnalyzeCustomData={handleAnalyzeCustomData}
+              />
+            </React.Suspense>
           </div>
         )}
 

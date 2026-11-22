@@ -40,15 +40,19 @@ Design rules
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 import os
 import pickle
 import re
+import tempfile
 import time
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 import numpy as np
 import rasterio
@@ -59,10 +63,62 @@ from ..config import settings
 
 # ── Cache ───────────────────────────────────────────────────────────────────
 
-_CACHE_DIR = Path(
-    os.getenv("HERAOCULUS_CACHE_DIR", str(Path(__file__).resolve().parents[2] / ".cache" / "gridded"))
-)
-_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# Resolved lazily on first cache write so importing this module never crashes
+# on a read-only filesystem.  None => not yet resolved; caching disabled if no
+# writable location can be found anywhere.
+_CACHE_DIR: Optional[Path] = None
+_CACHE_DISABLED = False
+
+
+def _resolve_cache_dir() -> Optional[Path]:
+    """Resolve a writable cache directory lazily on first cache write.
+
+    Candidate locations, in order:
+      1. ``HERAOCULUS_CACHE_DIR`` env var, if set
+      2. ``<repo>/.cache/gridded`` next to this package
+      3. ``tempfile.gettempdir()/heraoculus_cache``
+
+    The first location that can be created *and* written to wins.  If none can,
+    caching is disabled entirely and a warning is logged; the service keeps
+    serving requests without caching rather than crashing on a read-only
+    filesystem.
+    """
+    global _CACHE_DIR, _CACHE_DISABLED
+    if _CACHE_DISABLED:
+        return None
+    if _CACHE_DIR is not None:
+        return _CACHE_DIR
+
+    env_dir = os.getenv("HERAOCULUS_CACHE_DIR", "").strip()
+    candidates = [
+        Path(env_dir) if env_dir else None,
+        Path(__file__).resolve().parents[2] / ".cache" / "gridded",
+        Path(tempfile.gettempdir()) / "heraoculus_cache",
+    ]
+
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            # Verify we can actually write files into it.
+            probe = candidate / ".write_probe"
+            probe.write_bytes(b"")
+            probe.unlink()
+            _CACHE_DIR = candidate
+            return _CACHE_DIR
+        except OSError:
+            continue
+
+    _CACHE_DISABLED = True
+    logger.warning(
+        "Could not create a writable cache directory under %s; "
+        "gridded-climate upstream caching is disabled (requests still served "
+        "uncached).",
+        candidates,
+    )
+    return None
+
 
 # Default TTL: 24 hours.  Monthly products change at most once per month, so
 # a day is short enough to stay fresh while sparing upstream on repeats.
@@ -75,7 +131,10 @@ def _cache_key(dataset: str, payload: str) -> str:
 
 
 def _cache_get(dataset: str, payload: str, ttl_seconds: int = DEFAULT_TTL_SECONDS):
-    path = _CACHE_DIR / _cache_key(dataset, payload)
+    cache_dir = _resolve_cache_dir()
+    if cache_dir is None:
+        return None
+    path = cache_dir / _cache_key(dataset, payload)
     if not path.exists():
         return None
     try:
@@ -87,7 +146,10 @@ def _cache_get(dataset: str, payload: str, ttl_seconds: int = DEFAULT_TTL_SECOND
 
 
 def _cache_set(dataset: str, payload: str, data: bytes) -> None:
-    path = _CACHE_DIR / _cache_key(dataset, payload)
+    cache_dir = _resolve_cache_dir()
+    if cache_dir is None:
+        return
+    path = cache_dir / _cache_key(dataset, payload)
     try:
         path.write_bytes(data)
     except OSError:

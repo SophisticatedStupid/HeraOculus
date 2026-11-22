@@ -12,8 +12,18 @@ from rasterio.transform import from_origin
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.security import limiter
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _reset_limiter():
+    """Reset slowapi storage around each test so rate-limit counters never leak
+    between tests now that endpoints are rate limited."""
+    limiter.reset()
+    yield
+    limiter.reset()
 
 
 def _make_geotiff_bytes(

@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Frontend (Vite + Vitest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build for production
+        run: npm run build
+
+  backend:
+    name: Backend (FastAPI + pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Keep every credential unset so the backend runs in dev mode and no
+      # test hits the live network. The network-backed validation test is
+      # excluded via ``-m "not network"`` (see backend/pytest.ini).
+      HERAOCULUS_API_KEY: ""
+      EARTHDATA_TOKEN: ""
+      EARTHDATA_USERNAME: ""
+      EARTHDATA_PASSWORD: ""
+      NASA_FIRMS_MAP_KEY: ""
+      CDS_API_KEY: ""
+      CDSAPI_KEY: ""
+      DESTINE_PAT: ""
+      TRUST_PROXY_HEADERS: ""
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install Python dependencies
+        run: |
+          cd backend
+          if ! pip install -r requirements.txt; then
+            sudo apt-get update -y && sudo apt-get install -y --no-install-recommends build-essential python3-dev
+            pip install -r requirements.txt
+          fi
+
+      - name: Run test suite
+        run: cd backend && python -m pytest tests/ -q -m "not network"

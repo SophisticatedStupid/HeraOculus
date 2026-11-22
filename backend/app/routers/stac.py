@@ -11,10 +11,10 @@ fabricates synthetic results.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..schemas import StacSearchRequest, StacSearchResponse
-from ..security import require_api_key
+from ..security import LIMIT_UPSTREAM, limiter, require_api_key
 from ..services.stac_service import search_items
 
 router = APIRouter(
@@ -25,7 +25,8 @@ router = APIRouter(
 
 
 @router.post("/search", response_model=StacSearchResponse)
-def stac_search(payload: StacSearchRequest) -> StacSearchResponse:
+@limiter.limit(LIMIT_UPSTREAM)
+def stac_search(request: Request, payload: StacSearchRequest) -> StacSearchResponse:
     """Search a STAC catalog for satellite imagery scenes.
 
     Request body (JSON)::

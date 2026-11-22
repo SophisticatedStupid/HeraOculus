@@ -110,7 +110,7 @@ D:\Geo-Iris-main\Geo-Iris-main\
   │   │   ├─ test_stac_service.py
   │   │   ├─ test_gridded_climate.py
   │   │   └─ validation/
-  │   │       └─ validate_trends_extremes.py  Cross-check MK, Theil-Sen, Hamed-Rao MK, GEV vs pymannkendall/scipy
+  │   │       └─ test_validate_trends_extremes.py  Cross-check MK, Theil-Sen, Hamed-Rao MK, GEV vs pymannkendall/scipy (network; excluded from default CI)
   │   ├─ workers/                      (root-level workers reference)
   │   ├─ assets/                       Static assets
   │   ├─ theme/                        (root-level theme reference)
@@ -475,8 +475,9 @@ D:\Geo-Iris-main\Geo-Iris-main\
 
 6.2 Auth
    - AuthStatusResponse: earthdata_configured, earthdata_source,
-     earthdata_username_hint?, earthdata_token_hint?, firms_configured,
-     firms_source, firms_key_hint?, keyless_feeds_available[]
+     firms_configured, firms_source, cds_configured, cds_source,
+     destine_configured, destine_source, keyless_feeds_available[]
+     (no *_hint fields — partial secrets are never exposed)
    - HealthResponse: status, version, capabilities{}, auth
    - No AuthConfigRequest schema: credentials are server-managed only
    - /api/v1/auth/status is the sole auth endpoint (read-only)

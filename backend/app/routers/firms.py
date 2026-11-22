@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
 
 from ..schemas import FirmsQueryRequest
-from ..security import limiter, require_api_key
+from ..security import LIMIT_UPSTREAM, limiter, require_api_key
 from ..services.firms_service import query_firms_fires
 
 router = APIRouter(
@@ -16,7 +16,7 @@ router = APIRouter(
 
 
 @router.post("/fires")
-@limiter.limit("5/minute")
+@limiter.limit(LIMIT_UPSTREAM)
 def get_active_fires(request: Request, payload: FirmsQueryRequest) -> dict:
     return query_firms_fires(
         west=payload.west,

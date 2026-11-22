@@ -7,10 +7,10 @@ import asyncio
 import os
 import tempfile
 import uuid
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from rasterio.transform import Affine
 
-from ..security import limiter, require_api_key
+from ..security import LIMIT_HEAVY, LIMIT_UPSTREAM, limiter, require_api_key
 
 from ..schemas import (
     AsfSearchRequest,
@@ -78,7 +78,9 @@ RASTER_PROCESS_TIMEOUT = 120.0
 # ---------------------------------------------------------------------------
 
 @router.post("/inspect")
+@limiter.limit(LIMIT_HEAVY)
 async def inspect_raster(
+    request: Request,
     file: UploadFile = File(...),
     band_index: int = Form(default=1, ge=1),
     user_confirmed_type: Optional[str] = Form(default=None),
@@ -158,7 +160,9 @@ def _inspection_result_to_dict(result: RasterInspectionResult) -> dict:
 # ---------------------------------------------------------------------------
 
 @router.get("/interpolate/compatible-methods")
+@limiter.limit(LIMIT_HEAVY)
 def compatible_methods(
+    request: Request,
     raster_type: str = "continuous",
 ) -> CompatibleMethodsResponse:
     """Return interpolation methods compatible with a given raster type."""
@@ -171,7 +175,8 @@ def compatible_methods(
 # ---------------------------------------------------------------------------
 
 @router.post("/interpolate")
-def interpolate_raster(payload: InterpolateRequest) -> dict:
+@limiter.limit(LIMIT_HEAVY)
+def interpolate_raster(request: Request, payload: InterpolateRequest) -> dict:
     """Interpolate missing values in a raster band.
 
     Accepts a 2D array as nested lists with metadata (transform, CRS, nodata).
@@ -250,7 +255,8 @@ def interpolate_raster(payload: InterpolateRequest) -> dict:
 # ---------------------------------------------------------------------------
 
 @router.post("/interpolate/export")
-def export_interpolation(payload: ExportRequest) -> dict:
+@limiter.limit(LIMIT_HEAVY)
+def export_interpolation(request: Request, payload: ExportRequest) -> dict:
     """Export reconstructed raster as GeoTIFF with provenance and quality bands.
 
     Accepts a reconstructed array and provenance mask, writes a GeoTIFF with
@@ -407,7 +413,10 @@ def _temporal_result_to_dict(result: TemporalInterpolationResult) -> dict:
 # ---------------------------------------------------------------------------
 
 @router.post("/interpolate/validate")
-def validate_interpolation_endpoint(payload: ValidateRequest) -> dict:
+@limiter.limit(LIMIT_HEAVY)
+def validate_interpolation_endpoint(
+    request: Request, payload: ValidateRequest
+) -> dict:
     """Cross-validate an interpolation method using withheld observations.
 
     Runs random holdout or spatial block validation and returns error metrics
@@ -483,7 +492,8 @@ def _validation_result_to_dict(result) -> dict:
 # ---------------------------------------------------------------------------
 
 @router.post("/dem-diff")
-def dem_diff_preset(payload: DemDiffPresetRequest) -> dict:
+@limiter.limit(LIMIT_HEAVY)
+def dem_diff_preset(request: Request, payload: DemDiffPresetRequest) -> dict:
     return compute_dem_differencing(
         scenario=payload.scenario,
         lod_threshold_m=payload.lod_threshold_m,
@@ -492,7 +502,9 @@ def dem_diff_preset(payload: DemDiffPresetRequest) -> dict:
 
 
 @router.post("/dem-diff/upload")
+@limiter.limit(LIMIT_HEAVY)
 async def dem_diff_upload(
+    request: Request,
     before_file: UploadFile = File(...),
     after_file: UploadFile = File(...),
     lod_threshold_m: float = Form(default=0.75),
@@ -524,7 +536,8 @@ async def dem_diff_upload(
 
 
 @router.post("/sar-change")
-def sar_change_preset(payload: SarChangePresetRequest) -> dict:
+@limiter.limit(LIMIT_HEAVY)
+def sar_change_preset(request: Request, payload: SarChangePresetRequest) -> dict:
     return compute_sar_change_detection(
         scenario=payload.scenario,
         speckle_filter=payload.speckle_filter,
@@ -536,7 +549,9 @@ def sar_change_preset(payload: SarChangePresetRequest) -> dict:
 
 
 @router.post("/sar-change/upload")
+@limiter.limit(LIMIT_HEAVY)
 async def sar_change_upload(
+    request: Request,
     before_file: UploadFile = File(...),
     after_file: UploadFile = File(...),
     speckle_filter: str = Form(default="lee"),
@@ -576,7 +591,8 @@ async def sar_change_upload(
 
 
 @router.post("/asf-search")
-def asf_sar_search(payload: AsfSearchRequest) -> dict:
+@limiter.limit(LIMIT_UPSTREAM)
+def asf_sar_search(request: Request, payload: AsfSearchRequest) -> dict:
     return search_asf_sar_granules(
         lat=payload.lat,
         lon=payload.lon,
@@ -589,12 +605,15 @@ def asf_sar_search(payload: AsfSearchRequest) -> dict:
 
 
 @router.post("/lulc-transitions")
-def lulc_preset(payload: LulcPresetRequest) -> dict:
+@limiter.limit(LIMIT_HEAVY)
+def lulc_preset(request: Request, payload: LulcPresetRequest) -> dict:
     return compute_lulc_transitions(scenario=payload.scenario)
 
 
 @router.post("/lulc-transitions/upload")
+@limiter.limit(LIMIT_HEAVY)
 async def lulc_upload(
+    request: Request,
     before_file: UploadFile = File(...),
     after_file: UploadFile = File(...),
     pixel_grid_only: bool = Form(default=False),
