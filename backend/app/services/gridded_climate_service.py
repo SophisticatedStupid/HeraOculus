@@ -57,6 +57,10 @@ logger = logging.getLogger(__name__)
 import numpy as np
 import rasterio
 import requests
+from pyproj import CRS, Transformer
+from rasterio.features import geometry_mask
+from rasterio.transform import from_origin, rowcol
+from shapely.geometry import box
 
 from .auth_store import auth_store
 from ..config import settings
@@ -1278,18 +1282,154 @@ MODIS_H_COLS = 36
 MODIS_V_ROWS = 18
 MODIS_LST_NIGHT_SDS = "LST_Night_1km"
 
+# MODIS Sinusoidal (SIN) projection parameters (authoritative, NASA):
+#   +proj=sinu +lon_0=0 +x_0=0 +y_0=0
+#   sphere radius a = b = 6371007.181 m, units = m
+MODIS_SINU_PROJ4 = (
+    "+proj=sinu +lon_0=0 +x_0=0 +y_0=0 +a=6371007.181 "
+    "+b=6371007.181 +units=m +no_defs"
+)
+MODIS_SINU_CRS = CRS.from_proj4(MODIS_SINU_PROJ4)
+MODIS_SINU_R = 6371007.181  # metres (MODIS sphere)
+MODIS_PI = math.pi
+# Projected extent of the full sinusoidal globe:
+#   x = R * lon_rad        (lon_0 = 0)  -> [-R*pi, R*pi] for [-180, 180]
+#   y = R * lat_rad        -> [-R*pi/2, R*pi/2] for [-90, 90]
+MODIS_X_MIN = -MODIS_SINU_R * MODIS_PI
+MODIS_X_MAX = MODIS_SINU_R * MODIS_PI
+MODIS_Y_MIN = -MODIS_SINU_R * MODIS_PI / 2.0
+MODIS_Y_MAX = MODIS_SINU_R * MODIS_PI / 2.0
+# Tiles are equal squares in projected space (not in geographic space;
+# geographic tile shape distorts with latitude).
+MODIS_TILE_W = (MODIS_X_MAX - MODIS_X_MIN) / MODIS_H_COLS
+MODIS_TILE_H = (MODIS_Y_MAX - MODIS_Y_MIN) / MODIS_V_ROWS
+
 
 def _modis_tile_indices(lat: float, lon: float) -> tuple[str, str]:
     """Return (h_tile, v_tile) zero-padded MODIS sinusoidal tile indices.
 
-    h00 covers longitude [-180,-170], h35 covers [170,180].
-    v00 covers latitude [90,80] (northernmost), v17 covers [-80,-90].
+    The geographic coordinate is transformed into the MODIS Sinusoidal
+    projected coordinate system (authoritative NASA grid) and the tile is
+    located in projected space.  This correctly accounts for projection
+    distortion: tiles are equal squares in projected metres but have
+    different geographic shapes at different latitudes (they are ~10 deg x
+    10 deg only at the equator and narrow toward the poles).
+
+    h00 covers the westernmost column, h35 the easternmost; v00 covers the
+    northernmost row, v17 the southernmost.
     """
-    h = int(math.floor((lon + 180.0) / 10.0))
+    # lon/lat (EPSG:4326) -> MODIS sinusoidal projected (x, y) in metres.
+    transformer = Transformer.from_crs("EPSG:4326", MODIS_SINU_CRS, always_xy=True)
+    x, y = transformer.transform(lon, lat)
+
+    # Clamp to the valid projected globe extent (poles / antimeridian edge).
+    x = min(max(x, MODIS_X_MIN), MODIS_X_MAX)
+    y = min(max(y, MODIS_Y_MIN), MODIS_Y_MAX)
+
+    h = int(math.floor((x - MODIS_X_MIN) / MODIS_TILE_W))
+    v = int(math.floor((MODIS_Y_MAX - y) / MODIS_TILE_H))
     h = max(0, min(MODIS_H_COLS - 1, h))
-    v = int(math.floor((90.0 - lat) / 10.0))
     v = max(0, min(MODIS_V_ROWS - 1, v))
     return f"h{h:02d}", f"v{v:02d}"
+
+
+def _modis_tile_transform(
+    h_tile: str, v_tile: str, n_rows: int, n_cols: int
+) -> tuple:
+    """Return the affine transform and CRS for a MODIS sinusoidal tile.
+
+    The tile's projected extent is derived from its (h, v) indices in the
+    authoritative sinusoidal grid; the pixel size follows from the array
+    dimensions.  North-up, no rotation.
+    """
+    h_idx = int(h_tile[1:])
+    v_idx = int(v_tile[1:])
+    x_min = MODIS_X_MIN + h_idx * MODIS_TILE_W
+    y_max = MODIS_Y_MAX - v_idx * MODIS_TILE_H
+    pixel_w = MODIS_TILE_W / n_cols
+    pixel_h = MODIS_TILE_H / n_rows
+    transform = from_origin(x_min, y_max, pixel_w, pixel_h)
+    return transform, MODIS_SINU_CRS
+
+
+def _proj_bounds_of_bbox(
+    min_lon: float, min_lat: float, max_lon: float, max_lat: float, crs
+) -> tuple[float, float, float, float]:
+    """Projected (xmin, ymin, xmax, ymax) bounds of a lon/lat AOI bbox.
+
+    The AOI edges are densely sampled before transformation so that projection
+    curvature (e.g. the sinusoidal collapse of meridians at the poles) is
+    captured.  Transforming only the four corners is insufficient: at high
+    latitude all corners can project to nearly the same x while the box edges
+    span the full projected width.
+    """
+    transformer = Transformer.from_crs("EPSG:4326", crs, always_xy=True)
+    n = 65
+    lon_edge = np.linspace(min_lon, max_lon, n)
+    lat_edge = np.linspace(min_lat, max_lat, n)
+    xs: list[float] = []
+    ys: list[float] = []
+    for lon in lon_edge:
+        xs.append(lon)
+        xs.append(lon)
+        ys.append(min_lat)
+        ys.append(max_lat)
+    for lat in lat_edge:
+        xs.append(min_lon)
+        xs.append(max_lon)
+        ys.append(lat)
+        ys.append(lat)
+    tx, ty = transformer.transform(xs, ys)
+    return float(min(tx)), float(min(ty)), float(max(tx)), float(max(ty))
+
+
+def _modis_area_mean_masked(
+    arr: np.ndarray,
+    transform,
+    crs,
+    min_lon: float,
+    min_lat: float,
+    max_lon: float,
+    max_lat: float,
+) -> Optional[float]:
+    """Mean of valid pixels whose cell-centre falls inside the lon/lat AOI.
+
+    The AOI bounding box is transformed from EPSG:4326 into the raster CRS
+    and a spatial mask is constructed (cell-centre inclusion policy), so only
+    pixels intersecting the requested AOI are averaged.  Non-finite and
+    NoData/masked pixels are excluded.  Returns None when no valid AOI pixel
+    exists.
+    """
+    arr = np.asarray(arr, dtype=np.float64)
+
+    # Transform the AOI into the raster CRS (edge-densified for curvature).
+    try:
+        aoi_min_x, aoi_min_y, aoi_max_x, aoi_max_y = _proj_bounds_of_bbox(
+            min_lon, min_lat, max_lon, max_lat, crs
+        )
+    except Exception:
+        return None
+
+    # Rasterize the AOI into a cell-centre inclusion mask in raster CRS.
+    try:
+        aoi_geom = box(aoi_min_x, aoi_min_y, aoi_max_x, aoi_max_y)
+        in_aoi = geometry_mask(
+            [aoi_geom],
+            transform=transform,
+            out_shape=arr.shape,
+            invert=True,
+            all_touched=False,
+        )
+    except Exception:
+        return None
+
+    # Validity: finite AND inside the AOI.
+    with np.errstate(invalid="ignore"):
+        finite = np.isfinite(arr)
+    valid = finite & in_aoi
+    if not np.any(valid):
+        return None
+    return float(np.mean(arr[valid]))
 
 
 _MODIS_GRANULE_RE = re.compile(
@@ -1472,22 +1612,44 @@ def _modis_cell_value(
 
 
 def _modis_area_mean(
-    arr: np.ndarray, min_lon: float, min_lat: float, max_lon: float, max_lat: float
+    arr: np.ndarray,
+    min_lon: float,
+    min_lat: float,
+    max_lon: float,
+    max_lat: float,
+    *,
+    transform=None,
+    crs=None,
+    h_tile: Optional[str] = None,
+    v_tile: Optional[str] = None,
 ) -> Optional[float]:
-    """Mean of valid MODIS cells whose cell-centre falls inside the bbox."""
-    # MODIS sinusoidal tiles are ~10 deg x 10 deg; approximate cell centre
-    # grid from tile origin.  For area-mean over a bbox we sample the array
-    # cells whose nominal centre falls in the box.
+    """Mean of valid MODIS cells whose cell-centre falls inside the AOI bbox.
+
+    The requested AOI (lon/lat) is transformed into the raster CRS and a
+    spatial mask is constructed so only pixels intersecting the AOI are
+    averaged.  The tile georeferencing is reconstructed from the MODIS
+    sinusoidal (h, v) indices (authoritative projected grid); when no
+    georeferencing can be resolved the function falls back to averaging all
+    finite cells (legacy behaviour).
+
+    NoData / fill and non-finite cells are excluded; the statistic is
+    computed only over valid AOI pixels.
+    """
+    arr = np.asarray(arr, dtype=np.float64)
     n_rows, n_cols = arr.shape
-    tile_deg = 10.0
-    # Derive tile lon/lat origin from array bounds is not stored in the granule;
-    # instead, treat each cell as a point and rely on caller-supplied tile
-    # context.  Here we simply average all finite cells when the bbox overlaps
-    # the tile (caller ensures the bbox lies within one tile).
-    valid = arr[np.isfinite(arr)]
-    if valid.size == 0:
-        return None
-    return float(np.mean(valid))
+
+    if transform is None:
+        if h_tile is None or v_tile is None:
+            # No georeferencing available: fall back to all valid cells.
+            valid = arr[np.isfinite(arr)]
+            if valid.size == 0:
+                return None
+            return float(np.mean(valid))
+        transform, crs = _modis_tile_transform(h_tile, v_tile, n_rows, n_cols)
+    if crs is None:
+        crs = MODIS_SINU_CRS
+
+    return _modis_area_mean_masked(arr, transform, crs, min_lon, min_lat, max_lon, max_lat)
 
 
 def fetch_lst_night_monthly(
@@ -1576,16 +1738,26 @@ def fetch_lst_night_monthly(
             except GriddedUpstreamError:
                 continue
             if area_mean:
-                val = _modis_area_mean(arr, min_lon, min_lat, max_lon, max_lat)
+                val = _modis_area_mean(
+                    arr, min_lon, min_lat, max_lon, max_lat,
+                    h_tile=h_tile, v_tile=v_tile,
+                )
             else:
-                # Nearest cell to (lat, lon) within the tile.  Tile spans
-                # ~10 deg; estimate row/col from lat/lon offset within tile.
-                tile_lat_min = 90.0 - int(v_tile[1:]) * 10.0
-                tile_lon_min = -180.0 + int(h_tile[1:]) * 10.0
-                row = int(round((tile_lat_min - lat) / (10.0 / 1200.0)))
-                col = int(round((lon - tile_lon_min) / (10.0 / 1200.0)))
-                row = max(0, min(arr.shape[0] - 1, row))
-                col = max(0, min(arr.shape[1] - 1, col))
+                # Nearest cell to (lat, lon) within the tile.  Transform the
+                # query point into the tile's sinusoidal projected CRS and
+                # locate the containing pixel via the tile affine transform,
+                # correctly handling projection distortion (tiles are not
+                # uniform 10-degree blocks in geographic space).
+                transform, _tile_crs = _modis_tile_transform(
+                    h_tile, v_tile, arr.shape[0], arr.shape[1]
+                )
+                _proj = Transformer.from_crs(
+                    "EPSG:4326", MODIS_SINU_CRS, always_xy=True
+                )
+                px, py = _proj.transform(lon, lat)
+                row, col = rowcol(transform, px, py)
+                row = int(max(0, min(arr.shape[0] - 1, int(row))))
+                col = int(max(0, min(arr.shape[1] - 1, int(col))))
                 val = _modis_cell_value(arr, row, col)
             if val is not None:
                 granule_vals.append(round(val, 4))

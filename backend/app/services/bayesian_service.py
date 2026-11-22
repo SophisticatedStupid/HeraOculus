@@ -35,11 +35,18 @@ import warnings
 
 import numpy as np
 from scipy import stats as st
+from scipy.special import erf
+from scipy.fftpack import next_fast_len
 
 
 def _normal_cdf(x: np.ndarray) -> np.ndarray:
-    """Standard normal CDF: Phi(x) = 0.5 * (1 + erf(x / sqrt(2)))."""
-    return 0.5 * (1.0 + np.erf(x / np.sqrt(2.0)))
+    """Standard normal CDF: Phi(x) = 0.5 * (1 + erf(x / sqrt(2))).
+
+    Uses SciPy's error function because ``np.erf`` is not part of the
+    supported NumPy API. SciPy is already an accepted dependency of this
+    project (see requirements.txt), so no new dependency is introduced.
+    """
+    return 0.5 * (1.0 + erf(x / np.sqrt(2.0)))
 
 
 def _normal_ppf(p: np.ndarray) -> np.ndarray:
@@ -47,33 +54,161 @@ def _normal_ppf(p: np.ndarray) -> np.ndarray:
     return st.norm.ppf(np.clip(p, 1e-10, 1 - 1e-10))
 
 
-def _rank_normalize_2d(arr: np.ndarray) -> np.ndarray:
-    """Rank-normalize a 2D array (m chains x n draws).
+def _split_chains(ary: np.ndarray) -> np.ndarray:
+    """Split every chain into two equal halves and stack them as independent chains.
 
-    Maps each value to its z-score via the empirical CDF + inverse normal CDF.
-    Equivalent to: rankdata -> (rank - 0.5) / N -> Phi^{-1}(uniform).
-    This makes the transform invariant to location/scale and is the core
-    of the rank-normalized split R-hat (Vehtari et al., 2021).
+    Returns an array of shape (2 * m, n // 2) treating each half-chain as its
+    own chain, as required by split diagnostics (Vehtari et al., 2021).
     """
-    flat = arr.reshape(-1)
+    ary = np.asarray(ary, dtype=float)
+    if ary.ndim == 1:
+        ary = ary[None, :]
+    _, n_draw = ary.shape
+    half = n_draw // 2
+    return np.vstack((ary[:, :half], ary[:, -half:]))
+
+
+def _z_scale(ary: np.ndarray) -> np.ndarray:
+    """Rank-normalize an array (empirical CDF -> inverse standard normal CDF).
+
+    Maps each value to its z-score via the empirical CDF + inverse normal CDF,
+    making the transform invariant to location/scale. Applied to an already-split
+    array so each half-chain is rank-normalized against the pooled set of all
+    split-chain draws.
+    """
+    flat = ary.reshape(-1)
     ranks = st.rankdata(flat, method="average")
     uniform = np.clip((ranks - 0.5) / flat.shape[0], 1e-10, 1 - 1e-10)
     z = _normal_ppf(uniform)
-    return z.reshape(arr.shape)
+    return z.reshape(ary.shape)
 
 
-def _rank_normalized_split_rhat(chains: np.ndarray) -> dict:
+def _autocov(ary: np.ndarray, axis: int = 1) -> np.ndarray:
+    """Autocovariance at every lag for each chain (axis), centered per chain.
+
+    Mirrors ArviZ's autocov: each chain is demeaned, the autocovariance is
+    computed via FFT and normalized by the draw count. Centering each chain
+    individually is required for a defensible multi-chain autocorrelation
+    estimator (raw cross-products of uncentered chains are biased).
+    """
+    ary = np.asarray(ary, dtype=float)
+    axis = axis if axis > 0 else len(ary.shape) + axis
+    n = ary.shape[axis]
+    m = int(next_fast_len(2 * n))
+
+    centered = ary - ary.mean(axis=axis, keepdims=True)
+    fft_ary = np.fft.rfft(centered, n=m, axis=axis)
+    fft_ary *= np.conjugate(fft_ary)
+
+    sl = [slice(None)] * ary.ndim
+    sl[axis] = slice(0, n)
+    cov = np.fft.irfft(fft_ary, n=m, axis=axis)[tuple(sl)]
+    cov /= n
+    return cov
+
+
+def _ess_estimator(ary: np.ndarray) -> float:
+    """Effective sample size for a 2D array (chains x draws).
+
+    Implements the ArviZ / Vehtari et al. (2021) autocorrelation-based ESS:
+    multi-chain autocovariance averaged over chains, Geyer's initial positive
+    sequence for truncation, and Geyer's initial monotone sequence to reduce
+    variance. The marginal posterior variance estimate combines within-chain
+    and between-chain variance so differently dispersed chains are handled.
+
+    Returns the total number of draws (no autocorrelation information) for
+    constant or non-finite input, since ESS is undefined there.
+    """
+    ary = np.asarray(ary, dtype=float)
+    if ary.ndim == 1:
+        ary = ary[None, :]
+    m, n = ary.shape
+    total = float(m * n)
+
+    if n < 2:
+        return total
+
+    if not np.all(np.isfinite(ary)):
+        return total
+
+    if float(np.max(ary) - np.min(ary)) < np.finfo(float).resolution:
+        # Constant chain: no variation to estimate autocorrelation from.
+        return total
+
+    acov = _autocov(ary, axis=1)  # shape (m, n), autocovariance at every lag
+    chain_mean = ary.mean(axis=1)
+
+    # Unbiased within-chain variance (acov lag 0 is the MLE variance).
+    mean_var = float(np.mean(acov[:, 0])) * n / (n - 1.0)
+    # Marginal posterior variance estimate = within-chain + between-chain.
+    var_plus = float(np.mean(acov[:, 0]))  # mean_var * (n - 1) / n
+    if m > 1:
+        var_plus += float(np.var(chain_mean, ddof=1))
+
+    if var_plus <= 1e-14:
+        return total
+
+    rho_hat_t = np.zeros(n)
+    rho_hat_t[0] = 1.0
+    rho_hat_even = 1.0
+    rho_hat_odd = 1.0 - (mean_var - float(np.mean(acov[:, 1]))) / var_plus
+    rho_hat_t[1] = rho_hat_odd
+
+    # Geyer's initial positive sequence: keep lag pairs while their sum > 0.
+    t = 1
+    while t < (n - 3) and (rho_hat_even + rho_hat_odd) > 0.0:
+        rho_hat_even = 1.0 - (mean_var - float(np.mean(acov[:, t + 1]))) / var_plus
+        rho_hat_odd = 1.0 - (mean_var - float(np.mean(acov[:, t + 2]))) / var_plus
+        if (rho_hat_even + rho_hat_odd) >= 0.0:
+            rho_hat_t[t + 1] = rho_hat_even
+            rho_hat_t[t + 2] = rho_hat_odd
+        t += 2
+
+    max_t = t - 2
+    if rho_hat_even > 0:
+        rho_hat_t[max_t + 1] = rho_hat_even
+
+    # Geyer's initial monotone sequence: smooth non-monotone pair sums.
+    t = 1
+    while t <= max_t - 2:
+        if (rho_hat_t[t + 1] + rho_hat_t[t + 2]) > (rho_hat_t[t - 1] + rho_hat_t[t]):
+            rho_hat_t[t + 1] = (rho_hat_t[t - 1] + rho_hat_t[t]) / 2.0
+            rho_hat_t[t + 2] = rho_hat_t[t + 1]
+        t += 2
+
+    ess = total
+    tau_hat = (
+        -1.0
+        + 2.0 * float(np.sum(rho_hat_t[: max_t + 1]))
+        + float(np.sum(rho_hat_t[max_t + 1 : max_t + 2]))
+    )
+    tau_hat = max(tau_hat, 1.0 / np.log10(ess))
+    ess = ess / tau_hat
+
+    if not np.isfinite(ess):
+        ess = total
+    # ESS cannot exceed the total number of available draws.
+    return float(min(max(ess, 1.0), total))
+def _rank_normalized_split_rhat(chains: np.ndarray, folded: bool = False) -> dict:
     """Compute rank-normalized split R-hat (Vehtari et al., 2021).
 
     Steps:
-      1. Rank-normalize all draws across all chains (empirical CDF -> Normal).
-      2. Split each chain into two halves: first half and second half.
-      3. Compute split R-hat on the rank-normalized z-scores.
+      1. Optionally fold each split half-chain about its median (sensitive to
+         scale/tail differences in symmetric posteriors).
+      2. Rank-normalize all draws across all chains (empirical CDF -> Normal).
+      3. Split every chain into equal halves and treat each half as an
+         independent chain.
+      4. Compute between-chain variance across split-chain means and
+         within-chain variance across split chains (both on the halves).
+      5. Combine into the potential scale reduction factor sqrt(var_hat / W).
 
     Parameters
     ----------
     chains : np.ndarray of shape (m, n_draws)
         MCMC samples from m chains, each with n_draws iterations.
+    folded : bool
+        If True, compute the folded rank-normalized split R-hat on
+        |x - median(x)| values, following Vehtari et al. (2021).
 
     Returns
     -------
@@ -95,32 +230,44 @@ def _rank_normalized_split_rhat(chains: np.ndarray) -> dict:
             "is_valid": False,
         }
 
+    if not np.all(np.isfinite(chains)):
+        return {
+            "rhat": None,
+            "warnings": ["non_finite_samples"],
+            "is_valid": False,
+        }
+
     half = n // 2
-    if half < 10:
+    if half < 2:
         return {
             "rhat": None,
             "warnings": ["insufficient_half_draws", f"n={n}, half={half}"],
             "is_valid": False,
         }
 
-    # Rank-normalize all draws across all chains
-    rn = _rank_normalize_2d(chains)
+    # Split every chain into equal halves; treat each half as an independent chain.
+    split = _split_chains(chains)  # shape (2m, half)
 
-    # Split each chain into two halves and compute means
-    left_means = np.mean(rn[:, :half], axis=1)  # shape (m,)
-    right_means = np.mean(rn[:, half : 2 * half], axis=1)  # shape (m,)
-    all_means = np.concatenate([left_means, right_means])  # shape (2m,)
+    if folded:
+        # Fold each half-chain about the pooled median before rank normalization.
+        split = np.abs(split - np.median(split))
+
+    # Rank-normalize all split-chain draws together.
+    rn = _z_scale(split)
+
     N = half
+    split_means = np.mean(rn, axis=1)  # shape (2m,)
+    split_vars = np.var(rn, axis=1, ddof=1)  # shape (2m,)
 
-    # Between-chain variance of the pooled half-chain means
-    B = N * np.var(all_means, ddof=1)
-    # Within-chain variance (average over all 2m half-chains)
-    W = np.mean(np.var(rn, axis=1, ddof=1))
+    # Between-chain variance of the pooled split-chain means.
+    B = N * np.var(split_means, ddof=1)
+    # Within-chain variance averaged over all 2m split (half) chains.
+    W = float(np.mean(split_vars))
 
     warnings: list[str] = []
     is_valid = True
 
-    if W <= 1e-14:
+    if not np.isfinite(B) or not np.isfinite(W) or W <= 1e-14:
         warnings.append("zero_within_chain_variance")
         rhat = 1.0
         is_valid = False
@@ -139,7 +286,14 @@ def _bulk_ess(chains: np.ndarray) -> dict:
     """Estimate bulk Effective Sample Size.
 
     Computes the ESS for the bulk/central portion of the posterior
-    distribution using the autocorrelation-based estimator.
+    distribution using the autocorrelation-based estimator of
+    Vehtari et al. (2021) / ArviZ.
+
+    The chains are rank-normalized and split into halves (each half treated
+    as an independent chain), each chain is centered, and the multi-chain
+    autocovariance is averaged across chains. Truncation uses Geyer's initial
+    positive and monotone sequences. The result cannot exceed the total
+    number of available draws.
 
     Parameters
     ----------
@@ -163,39 +317,11 @@ def _bulk_ess(chains: np.ndarray) -> dict:
     if np.var(flat) <= 1e-14:
         return {"ess": float(m * n), "warnings": ["zero_chain_variance_bulk_ess"]}
 
-    max_lag = min(100, n // 3)
-    mean_all = np.mean(flat)
-    var_all = np.var(flat)
+    if not np.all(np.isfinite(flat)):
+        return {"ess": float(m * n), "warnings": ["non_finite_samples_bulk_ess"]}
 
-    if var_all <= 1e-14:
-        return {"ess": float(m * n), "warnings": ["zero_variance_bulk_ess"]}
-
-    # Accumulate tau = 1 + 2 * sum(acf_lag)
-    tau = 1.0
-    for lag in range(1, max_lag):
-        n_pairs = m * n - lag
-        if n_pairs <= 0:
-            break
-
-        total_products = 0.0
-        for c in range(m):
-            chain = chains[c]
-            if lag >= len(chain):
-                continue
-            total_products += float(np.sum(chain[:-lag] * chain[lag:]))
-
-        if total_products == 0 and lag <= 3:
-            break
-
-        cov = total_products / n_pairs
-        acf = cov / var_all
-
-        if acf <= 0.0:
-            break
-
-        tau += 2.0 * acf
-
-    ess = float(max(1.0, (m * n) / max(1.0, tau)))
+    # Rank-normalize and split: each half-chain is an independent chain.
+    ess = _ess_estimator(_z_scale(_split_chains(chains)))
 
     warnings: list[str] = []
     if n < 20:
@@ -204,13 +330,20 @@ def _bulk_ess(chains: np.ndarray) -> dict:
         warnings.append("zero_chain_variance_bulk_ess")
 
     return {
-        "ess": ess,
+        "ess": float(ess),
         "warnings": warnings,
     }
 
 
 def _tail_ess(chains: np.ndarray, prob: float = 0.05) -> dict:
     """Estimate tail Effective Sample Size at a given tail probability.
+
+    The tail ESS is the minimum of the autocorrelation-adjusted effective
+    sample sizes of the lower- and upper-tail indicator chains
+    (Vehtari et al., 2021 / ArviZ ``ess`` method="tail"). Each indicator
+    chain is split into halves and its ESS is computed with the same
+    autocorrelation-aware estimator as the bulk ESS, so autocorrelation is
+    accounted for rather than relying on raw tail sample counts.
 
     Parameters
     ----------
@@ -243,18 +376,30 @@ def _tail_ess(chains: np.ndarray, prob: float = 0.05) -> dict:
             "warnings": ["zero_chain_variance_tail_ess"],
         }
 
-    q_low = np.percentile(flat, prob * 100)
-    q_high = np.percentile(flat, (1 - prob) * 100)
+    if not np.all(np.isfinite(flat)):
+        return {
+            "ess": float(n_total),
+            "warnings": ["non_finite_samples_tail_ess"],
+        }
 
-    n_lower_tail = float(np.sum(flat <= q_low))
-    n_upper_tail = float(np.sum(flat >= q_high))
+    if not 0.0 < prob < 0.5:
+        return {
+            "ess": float(n_total),
+            "warnings": ["invalid_tail_probability"],
+        }
 
-    tail_sample_count = n_lower_tail + n_upper_tail
+    # Relevant tail quantiles over the pooled draws.
+    q_low = float(np.percentile(flat, prob * 100))
+    q_high = float(np.percentile(flat, (1.0 - prob) * 100))
 
-    if tail_sample_count > 0:
-        ess_tail = float(max(1.0, tail_sample_count / max(1.0, m)))
-    else:
-        ess_tail = float(n_total)
+    # Lower- and upper-tail indicator chains (ties included via <= / >).
+    lower_indicator = (chains <= q_low).astype(float)
+    upper_indicator = (chains > q_high).astype(float)
+
+    ess_low = _ess_estimator(_split_chains(lower_indicator))
+    ess_high = _ess_estimator(_split_chains(upper_indicator))
+
+    ess_tail = float(min(ess_low, ess_high))
 
     warnings: list[str] = []
     if n_total < 40:

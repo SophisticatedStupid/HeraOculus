@@ -270,27 +270,47 @@ export function seasonalMannKendall(
   let autoCorrection = 1.0;
   let hamedRaoRhoDiagnostic: number[] = []; // per-lag rho values for diagnostics
 
-  // Hamed & Rao (1998): centered detrended rank autocorrelation variance factor
-  // Preserves original time indices; only uses consecutive year pairs.
+  // Hamed & Rao (1998): centered detrended rank autocorrelation variance factor.
+  //
+  // Each valid observation is keyed by its ORIGINAL ARRAY INDEX, which encodes
+  // both year (Math.floor(i / seasonLength)) and season (i % seasonLength).
+  // Using the year alone as a key (the previous approach) caused observations
+  // from different seasons in the same year to overwrite one another, and it
+  // paired observations at "year + lag" regardless of season -- e.g. January
+  // could be correlated with February merely because they fall in adjacent
+  // years.
+  //
+  // Here an observation at index `i` is paired only with the observation of
+  // the SAME season exactly `lag` years later, at index `i + lag * seasonLength`.
+  // Missing observations are absent from the index map, so no spurious pair is
+  // created across a gap, and actual temporal spacing is preserved.
   if (method === 'hamed_rao' && nYears > 3) {
-    // Collect valid observations with original year indices (0-based across all seasons)
-    const validObs: { year: number; value: number }[] = [];
+    const validObs: {
+      year: number;
+      season: number;
+      idx: number;
+      value: number;
+    }[] = [];
     for (let i = 0; i < workingValues.length; i++) {
       if (!isNaN(workingValues[i]) && isFinite(workingValues[i])) {
-        const year = Math.floor(i / seasonLength);
-        validObs.push({ year, value: workingValues[i] });
+        validObs.push({
+          year: Math.floor(i / seasonLength),
+          season: i % seasonLength,
+          idx: i,
+          value: workingValues[i],
+        });
       }
     }
     const mLen = validObs.length;
     if (mLen >= 6) {
       // Detrend using original year indices
-      const years = validObs.map(o => o.year);
-      const valuesArr = validObs.map(o => o.value);
+      const years = validObs.map((o) => o.year);
+      const valuesArr = validObs.map((o) => o.value);
       const overallBeta = senSlopeExact(valuesArr, years);
-      const detrended = validObs.map((o, k) => o.value - overallBeta * o.year);
+      const detrended = validObs.map((o) => o.value - overallBeta * o.year);
       const ranks = rankArray(detrended);
       const meanRank = ranks.reduce((a, b) => a + b, 0) / mLen;
-      const centered = ranks.map(r => r - meanRank);
+      const centered = ranks.map((r) => r - meanRank);
       const denom = centered.reduce((s, r) => s + r * r, 0);
 
       if (denom > 1e-12) {
@@ -298,17 +318,18 @@ export function seasonalMannKendall(
         const maxLag = Math.min(12, Math.floor(mLen / 4));
         const crit = 1.96 / Math.sqrt(mLen);
 
-        // Map from original year to position in validObs
-        const yearToIndex = new Map<number, number>();
-        validObs.forEach((o, idx) => yearToIndex.set(o.year, idx));
+        // Map from original array index (year + season) to position in validObs.
+        const indexToPosition = new Map<number, number>();
+        validObs.forEach((o, pos) => indexToPosition.set(o.idx, pos));
 
         for (let lag = 1; lag <= maxLag; lag++) {
           let num = 0;
           let pairCount = 0;
-          // Only correlate observations with exact year difference = lag
+          // Same season, exactly `lag` years apart.
+          const step = lag * seasonLength;
           for (let i = 0; i < mLen; i++) {
-            const targetYear = validObs[i].year + lag;
-            const j = yearToIndex.get(targetYear);
+            const targetIdx = validObs[i].idx + step;
+            const j = indexToPosition.get(targetIdx);
             if (j !== undefined) {
               num += centered[i] * centered[j];
               pairCount++;
@@ -316,9 +337,10 @@ export function seasonalMannKendall(
           }
           const rho = pairCount > 0 ? num / denom : 0;
           hamedRaoRhoDiagnostic.push(rho);
+          // Weight by the actual number of same-season pairs at this lag.
           if (Math.abs(rho) > crit && pairCount >= 2) {
             correctionSum +=
-              ((mLen - lag) * (mLen - lag - 1) * (mLen - lag - 2)) * rho;
+              pairCount * (pairCount - 1) * (pairCount - 2) * rho;
           }
         }
 

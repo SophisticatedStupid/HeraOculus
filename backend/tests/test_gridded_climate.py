@@ -883,18 +883,32 @@ def _patch_modis_urls(
 
 
 def test_modis_tile_indices() -> None:
-    # lat=0, lon=0 -> h18, v09
+    # Authoritative MODIS Sinusoidal grid (projected metres), not a
+    # 10-degree geographic approximation.  Poles collapse to x=0 so all
+    # longitudes map to the same central column at lat=+/-90.
+    # lat=0, lon=0 -> h18, v09 (central tile)
     h, v = gcs._modis_tile_indices(0.0, 0.0)
     assert h == "h18"
     assert v == "v09"
-    # lat=90, lon=180 -> h35, v00
+    # North pole: every longitude collapses to x=0 -> central column h18;
+    # top row v00.
     h, v = gcs._modis_tile_indices(90.0, 180.0)
-    assert h == "h35"
+    assert h == "h18"
     assert v == "v00"
-    # lat=-90, lon=-180 -> h00, v17
+    # South pole: central column h18; bottom row v17.
     h, v = gcs._modis_tile_indices(-90.0, -180.0)
-    assert h == "h00"
+    assert h == "h18"
     assert v == "v17"
+    # Projection distortion: the same longitude falls in different tiles at
+    # different latitudes (lon=10 deg E is h19 at equator but h18 at 80 N
+    # because x = R*lon_rad*cos(lat) shrinks toward the pole).
+    h_eq, _ = gcs._modis_tile_indices(0.0, 10.0)
+    h_hi, _ = gcs._modis_tile_indices(80.0, 10.0)
+    assert h_eq == "h19"
+    assert h_hi == "h18"
+    # Edge clamping: antimeridian / pole stays in range.
+    assert gcs._modis_tile_indices(0.0, 180.0)[0] == "h35"
+    assert gcs._modis_tile_indices(0.0, -180.0)[0] == "h00"
 
 
 def test_modis_cell_value() -> None:
@@ -1021,6 +1035,250 @@ def test_fetch_lst_night_monthly_cache_hit_avoids_redownload(monkeypatch) -> Non
         end_month=6,
     )
     assert abs(series.values[0] - 300.0) < 1e-6
+
+
+# ── MODIS area-mean spatial masking regression tests ────────────────────────
+# Synthetic georeferenced rasters; no live network.
+
+
+def _expected_cell_centre_mean(
+    arr: np.ndarray,
+    transform,
+    crs,
+    min_lon: float,
+    min_lat: float,
+    max_lon: float,
+    max_lat: float,
+) -> Optional[float]:
+    """Independent expected value: cell centres inside the AOI (in raster CRS).
+
+    Reimplements the cell-centre selection directly from the affine transform
+    (no geometry_mask), so it cross-checks _modis_area_mean_masked without
+    sharing its rasterization code path.
+    """
+    from pyproj import Transformer
+
+    arr = np.asarray(arr, dtype=np.float64)
+    n_rows, n_cols = arr.shape
+    transformer = Transformer.from_crs("EPSG:4326", crs, always_xy=True)
+    # Edge-densified projected bounds (mirrors the service's curvature handling,
+    # implemented independently with numpy edge sampling).
+    lon_edge = np.linspace(min_lon, max_lon, 33)
+    lat_edge = np.linspace(min_lat, max_lat, 33)
+    xs, ys = [], []
+    for lon in lon_edge:
+        xs += [lon, lon]
+        ys += [min_lat, max_lat]
+    for lat in lat_edge:
+        xs += [min_lon, max_lon]
+        ys += [lat, lat]
+    tx, ty = transformer.transform(xs, ys)
+    aoi_min_x, aoi_max_x = float(min(tx)), float(max(tx))
+    aoi_min_y, aoi_max_y = float(min(ty)), float(max(ty))
+
+    cols = np.arange(n_cols)
+    rows = np.arange(n_rows)
+    cc, rr = np.meshgrid(cols, rows)
+    cx = transform.c + (cc + 0.5) * transform.a + (rr + 0.5) * transform.b
+    cy = transform.f + (cc + 0.5) * transform.d + (rr + 0.5) * transform.e
+    inside = (
+        (cx >= aoi_min_x)
+        & (cx <= aoi_max_x)
+        & (cy >= aoi_min_y)
+        & (cy <= aoi_max_y)
+    )
+    valid = np.isfinite(arr) & inside
+    if not np.any(valid):
+        return None
+    return float(np.mean(arr[valid]))
+
+
+def _make_transform_from_bounds(
+    min_lon, min_lat, max_lon, max_lat, n_cols, n_rows
+):
+    from rasterio.transform import from_bounds
+
+    return from_bounds(min_lon, min_lat, max_lon, max_lat, n_cols, n_rows)
+
+
+def test_modis_area_mean_full_raster():
+    """Full-raster AOI averages every valid cell."""
+    arr = np.array(
+        [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0],
+         [9.0, 10.0, 11.0, 12.0], [13.0, 14.0, 15.0, 16.0]],
+        dtype=np.float64,
+    )
+    transform = _make_transform_from_bounds(-10, -10, 10, 10, 4, 4)
+    val = gcs._modis_area_mean_masked(arr, transform, "EPSG:4326", -10, -10, 10, 10)
+    assert val is not None
+    assert abs(val - 8.5) < 1e-9
+
+
+def test_modis_area_mean_small_aoi():
+    """Small AOI selects only cells whose centre falls inside."""
+    arr = np.array(
+        [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0],
+         [9.0, 10.0, 11.0, 12.0], [13.0, 14.0, 15.0, 16.0]],
+        dtype=np.float64,
+    )
+    transform = _make_transform_from_bounds(-10, -10, 10, 10, 4, 4)
+    # AOI (-5,-5,5,5): centres (-2.5,2.5),(2.5,2.5),(-2.5,-2.5),(2.5,-2.5)
+    val = gcs._modis_area_mean_masked(arr, transform, "EPSG:4326", -5, -5, 5, 5)
+    expected = _expected_cell_centre_mean(
+        arr, transform, "EPSG:4326", -5, -5, 5, 5
+    )
+    assert val is not None and expected is not None
+    assert abs(val - expected) < 1e-9
+    assert abs(val - 8.5) < 1e-9
+
+
+def test_modis_area_mean_partial_intersection():
+    """AOI partially intersecting the raster selects the overlapping cells."""
+    arr = np.array(
+        [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0],
+         [9.0, 10.0, 11.0, 12.0], [13.0, 14.0, 15.0, 16.0]],
+        dtype=np.float64,
+    )
+    transform = _make_transform_from_bounds(-10, -10, 10, 10, 4, 4)
+    # AOI (-10,-10,-2,-2): cols 0-1 (lon -7.5,-2.5), rows 2-3 (lat -2.5,-7.5)
+    val = gcs._modis_area_mean_masked(
+        arr, transform, "EPSG:4326", -10, -10, -2, -2
+    )
+    expected = _expected_cell_centre_mean(
+        arr, transform, "EPSG:4326", -10, -10, -2, -2
+    )
+    assert val is not None and expected is not None
+    assert abs(val - expected) < 1e-9
+    assert abs(val - 11.5) < 1e-9
+
+
+def test_modis_area_mean_aoi_outside_raster_is_none():
+    """AOI entirely outside the raster returns None."""
+    arr = np.ones((4, 4), dtype=np.float64)
+    transform = _make_transform_from_bounds(-10, -10, 10, 10, 4, 4)
+    val = gcs._modis_area_mean_masked(
+        arr, transform, "EPSG:4326", 20.0, 20.0, 30.0, 30.0
+    )
+    assert val is None
+
+
+def test_modis_area_mean_excludes_nodata():
+    """NoData / fill cells are excluded from the AOI statistic."""
+    arr = np.array(
+        [[1.0, 2.0, 3.0, 4.0], [5.0, np.nan, 7.0, 8.0],
+         [9.0, 10.0, 11.0, 12.0], [13.0, 14.0, 15.0, 16.0]],
+        dtype=np.float64,
+    )
+    transform = _make_transform_from_bounds(-10, -10, 10, 10, 4, 4)
+    # Full AOI excludes the NaN at (row1,col1)=6 -> mean of remaining 15.
+    val = gcs._modis_area_mean_masked(arr, transform, "EPSG:4326", -10, -10, 10, 10)
+    expected = (136.0 - 6.0) / 15.0
+    assert val is not None
+    assert abs(val - expected) < 1e-9
+
+
+def test_modis_area_mean_changing_aoi_changes_statistic():
+    """Different AOIs select different pixels and yield different statistics."""
+    arr = np.array(
+        [[1.0, 1.0, 100.0, 100.0], [1.0, 1.0, 100.0, 100.0],
+         [50.0, 50.0, 50.0, 50.0], [50.0, 50.0, 50.0, 50.0]],
+        dtype=np.float64,
+    )
+    transform = _make_transform_from_bounds(-10, -10, 10, 10, 4, 4)
+    full = gcs._modis_area_mean_masked(arr, transform, "EPSG:4326", -10, -10, 10, 10)
+    corner = gcs._modis_area_mean_masked(
+        arr, transform, "EPSG:4326", -10, 0, 0, 10
+    )
+    assert full is not None and corner is not None
+    assert abs(full - corner) > 1.0, "Changing the AOI must change the statistic"
+
+
+def test_modis_area_mean_different_resolution():
+    """Different raster resolutions select different cell sets."""
+    coarse = np.array([[10.0, 20.0], [30.0, 40.0]], dtype=np.float64)
+    t_coarse = _make_transform_from_bounds(-10, -10, 10, 10, 2, 2)
+    fine = np.arange(1, 17, dtype=np.float64).reshape(4, 4)
+    t_fine = _make_transform_from_bounds(-10, -10, 10, 10, 4, 4)
+    # Same AOI (avoid cell-centre-on-boundary edge cases); coarse vs fine
+    # resolutions give different means.
+    vc = gcs._modis_area_mean_masked(coarse, t_coarse, "EPSG:4326", -6, -6, 6, 6)
+    vf = gcs._modis_area_mean_masked(fine, t_fine, "EPSG:4326", -6, -6, 6, 6)
+    expected_c = _expected_cell_centre_mean(coarse, t_coarse, "EPSG:4326", -6, -6, 6, 6)
+    expected_f = _expected_cell_centre_mean(fine, t_fine, "EPSG:4326", -6, -6, 6, 6)
+    assert vc is not None and vf is not None
+    assert abs(vc - expected_c) < 1e-9
+    assert abs(vf - expected_f) < 1e-9
+    assert abs(vc - vf) > 1.0
+
+
+def test_modis_area_mean_non_equatorial_sinusoidal():
+    """Non-equatorial AOI in MODIS sinusoidal CRS transforms correctly."""
+    arr = np.ones((4, 4), dtype=np.float64) * 7.0
+    transform, crs = gcs._modis_tile_transform("h18", "v09", 4, 4)
+    # Full-globe AOI: every cell centre is inside the tile extent.
+    val = gcs._modis_area_mean_masked(
+        arr, transform, crs, -180.0, -90.0, 180.0, 90.0
+    )
+    expected = _expected_cell_centre_mean(
+        arr, transform, crs, -180.0, -90.0, 180.0, 90.0
+    )
+    assert val is not None and expected is not None
+    assert abs(val - expected) < 1e-6
+    assert abs(val - 7.0) < 1e-6
+
+
+def test_modis_area_mean_high_latitude_tile():
+    """Masking at a high (non-equatorial) latitude tile."""
+    # h18v00 is the northernmost central tile (lat ~80-90).
+    transform, crs = gcs._modis_tile_transform("h18", "v00", 4, 4)
+    arr = np.full((4, 4), 3.0, dtype=np.float64)
+    val = gcs._modis_area_mean_masked(
+        arr, transform, crs, -180.0, -90.0, 180.0, 90.0
+    )
+    expected = _expected_cell_centre_mean(
+        arr, transform, crs, -180.0, -90.0, 180.0, 90.0
+    )
+    assert val is not None and expected is not None
+    assert abs(val - expected) < 1e-6
+    assert abs(val - 3.0) < 1e-6
+
+
+def test_modis_area_mean_h_tile_path_full_tile():
+    """_modis_area_mean via h_tile/v_tile reconstructs the tile transform."""
+    arr = np.arange(1, 17, dtype=np.float64).reshape(4, 4)
+    val = gcs._modis_area_mean(
+        arr, -10.0, -10.0, 10.0, 10.0, h_tile="h18", v_tile="v09"
+    )
+    # Full tile AOI -> all 16 valid cells.
+    assert val is not None
+    assert abs(val - 8.5) < 1e-9
+
+
+def test_modis_area_mean_h_tile_path_partial_aoi():
+    """_modis_area_mean via h_tile/v_tile masks to the AOI, not the whole tile."""
+    arr = np.arange(1, 17, dtype=np.float64).reshape(4, 4)
+    transform, crs = gcs._modis_tile_transform("h18", "v09", 4, 4)
+    # AOI (lon 1-5 deg, lat -4 to -2 deg) selects a subset of cell centres.
+    val = gcs._modis_area_mean(
+        arr, 1.0, -4.0, 5.0, -2.0, h_tile="h18", v_tile="v09"
+    )
+    expected = _expected_cell_centre_mean(
+        arr, transform, crs, 1.0, -4.0, 5.0, -2.0
+    )
+    assert val is not None and expected is not None
+    assert abs(val - expected) < 1e-6
+    # It must differ from the full-tile mean (8.5), proving AOI masking.
+    assert abs(val - 8.5) > 1.0
+
+
+def test_modis_area_mean_no_georeferencing_falls_back_to_all_finite():
+    """Without transform/h_tile/v_tile, falls back to averaging all finite cells."""
+    arr = np.array(
+        [[1.0, 2.0], [np.nan, 4.0]], dtype=np.float64
+    )
+    val = gcs._modis_area_mean(arr, -180.0, -90.0, 180.0, 90.0)
+    assert val is not None
+    assert abs(val - (1.0 + 2.0 + 4.0) / 3.0) < 1e-9
 
 
 # ── MODIS LST Night router-level tests ──────────────────────────────────────
