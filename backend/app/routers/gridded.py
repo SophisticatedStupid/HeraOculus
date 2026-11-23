@@ -151,10 +151,9 @@ def gridded_series(
         )
     if dataset == "era5-land":
         _require_credentials(
-            bool(auth_store.get_cds_credentials())
-            or bool(auth_store.get_destine_pat()),
+            bool(auth_store.get_cds_credentials()),
             "era5-land",
-            "Copernicus CDS API key or DestinE PAT",
+            "Copernicus CDS API key",
         )
         try:
             series = fetch_era5_land_monthly(
