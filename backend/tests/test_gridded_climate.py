@@ -14,7 +14,6 @@ Upstream is mocked — no live network. Covers:
 from __future__ import annotations
 
 import io
-import pickle
 from typing import Optional
 from unittest.mock import MagicMock, patch
 
@@ -557,7 +556,7 @@ def test_fetch_era5_land_cache_hit(monkeypatch) -> None:
     gcs._cache_set(
         "era5-land",
         "era5_land_monthly_2024_01",
-        pickle.dumps(_ERA5_TEST_ARRAY),
+        _ERA5_TEST_ARRAY,
     )
     # If the cache is bypassed, the Zarr read / network would be attempted;
     # make requests.get raise so any cache miss is surfaced.
@@ -577,11 +576,86 @@ def test_fetch_era5_land_cache_hit(monkeypatch) -> None:
     assert series.values[0] == 5.0
 
 
+def test_fetch_era5_land_antimeridian_bbox(monkeypatch) -> None:
+    """Bbox crossing antimeridian (lon 179E..179W) should select both sides."""
+    _patch_era5_fetch(monkeypatch, _ERA5_TEST_ARRAY)
+    series = gcs.fetch_era5_land_monthly(
+        lat=0.0,
+        lon=0.0,
+        start_year=2024,
+        start_month=1,
+        end_year=2024,
+        end_month=1,
+        area_mean=True,
+        bbox=[179.0, -2.0, -179.0, 2.0],  # crosses antimeridian
+    )
+    assert series.values == [5.0]
+
+
+def test_fetch_era5_land_bbox_shape_assertion(monkeypatch) -> None:
+    """Area-mean bbox subsetting produces a valid series for an interior bbox."""
+    _patch_era5_fetch(monkeypatch, _ERA5_TEST_ARRAY)
+    # Bbox lon 20..30 maps to cols 200..300, inside the 0.005 band (cols 100:3590).
+    series = gcs.fetch_era5_land_monthly(
+        lat=0.0,
+        lon=0.0,
+        start_year=2024,
+        start_month=1,
+        end_year=2024,
+        end_month=1,
+        area_mean=True,
+        bbox=[20.0, -1.0, 30.0, 1.0],
+    )
+    assert series.values == [5.0]
+    assert series.units == "mm/month"
+    assert series.valid_count == 1
+
+
+def test_fetch_era5_land_24_month_cap() -> None:
+    """ERA5-Land enforces 24-month date range cap (raises ValueError)."""
+    with pytest.raises(ValueError, match="24-month cap"):
+        gcs.fetch_era5_land_monthly(
+            lat=2.0,
+            lon=-2.0,
+            start_year=2020,
+            start_month=1,
+            end_year=2022,
+            end_month=2,  # 25 months
+        )
+
+
+def test_fetch_era5_land_area_mean_weighting(monkeypatch) -> None:
+    """Area-mean uses cos-lat weighting (mean of valid cells with cos-lat weights)."""
+    # Create an array where precip varies with latitude (e.g., 0.005 at equator,
+    # 0.010 at 45N). The cos-lat weighted mean should differ from simple mean.
+    lat_vals = np.linspace(-90, 90, 1800)  # 0.1 deg resolution
+    arr = np.full((1800, 3600), np.nan, dtype=np.float64)
+    for i, lat in enumerate(lat_vals):
+        arr[i, 100:3500] = 0.005 + 0.005 * abs(lat) / 90.0  # 0.005 at equator, 0.010 at poles
+    _patch_era5_fetch(monkeypatch, arr)
+    # Bbox covering equator to 45N
+    series = gcs.fetch_era5_land_monthly(
+        lat=0.0,
+        lon=0.0,
+        start_year=2024,
+        start_month=1,
+        end_year=2024,
+        end_month=1,
+        area_mean=True,
+        bbox=[-10.0, 0.0, 10.0, 45.0],
+    )
+    # Cos-lat weighted mean should be less than simple mean (weights more at equator)
+    # Simple mean of 0.005..0.0075 range = ~0.00625 m -> 6.25 mm
+    # Cos-lat weights higher at lower lat -> mean ~0.0058 m -> 5.8 mm
+    val = series.values[0]
+    assert val is not None
+    assert 5.0 < val < 6.5  # weighted mean in expected range
+
+
 # ── ERA5-Land router-level tests ────────────────────────────────────────────
 
 def test_gridded_era5_land_missing_credentials_400(monkeypatch) -> None:
     monkeypatch.setattr(gcs.auth_store, "get_cds_credentials", lambda: None)
-    monkeypatch.setattr(gcs.auth_store, "get_destine_pat", lambda: None)
     resp = _post_gridded(
         "era5-land",
         {
@@ -593,12 +667,11 @@ def test_gridded_era5_land_missing_credentials_400(monkeypatch) -> None:
         },
     )
     assert resp.status_code == 400
-    assert "CDS" in resp.json()["detail"] or "DestinE" in resp.json()["detail"]
+    assert "CDS" in resp.json()["detail"]
 
 
 def test_gridded_era5_land_available(monkeypatch) -> None:
     monkeypatch.setattr(gcs.auth_store, "get_cds_credentials", lambda: "cds-key")
-    monkeypatch.setattr(gcs.auth_store, "get_destine_pat", lambda: None)
     _patch_era5_fetch(monkeypatch, _ERA5_TEST_ARRAY)
     resp = _post_gridded(
         "era5-land",

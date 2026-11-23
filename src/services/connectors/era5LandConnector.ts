@@ -3,9 +3,9 @@
  * ARCO Zarr mirror).
  *
  * Proxyed through the HeraOculus backend (`POST /api/v1/gridded/era5-land`).
- * The backend requires a CDS API key (CDS_API_KEY/CDSAPI_KEY) or a DestinE PAT
- * (DESTINE_PAT); when none are configured it returns an explicit
- * 'unavailable' result — the connector never fabricates data.
+ * The backend requires a CDS API key (CDS_API_KEY/CDSAPI_KEY); when none are
+ * configured it returns an explicit 'unavailable' result — the connector never
+ * fabricates data.
  * Coverage: global land (90°S–90°N), 0.1° grid, 1950–present.
  * Variable: total precipitation (stored in metres; converted to mm/month by
  * the backend). Provenance: reanalysis_model. Updated daily, ~5 days behind

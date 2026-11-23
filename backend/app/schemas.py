@@ -30,8 +30,6 @@ class AuthStatusResponse(BaseModel):
     firms_source: str
     cds_configured: bool
     cds_source: str
-    destine_configured: bool
-    destine_source: str
     keyless_feeds_available: list[str]
 
 

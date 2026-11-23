@@ -81,6 +81,8 @@ from __future__ import annotations
 
 
 import hashlib
+import io
+import json
 
 import logging
 
@@ -298,12 +300,20 @@ def _enforce_size_cap(cache_dir: Path) -> None:
             pass
 
 
+# Default TTL: 24 hours.  Monthly products change at most once per month, so
+# a day is short enough to stay fresh while sparing upstream on repeats.
+
+DEFAULT_TTL_SECONDS = 24 * 60 * 60
+
+
 def _cache_get(dataset: str, payload: str, ttl_seconds: int = DEFAULT_TTL_SECONDS):
     """Retrieve a cached value.
 
-    Returns the raw payload bytes if the cache entry exists, is fresh, and
-    the envelope is valid.  Returns None on miss, expiry, corruption, or
-    if caching is disabled.
+    Returns the deserialized value: ``bytes`` for raw blobs, ``np.ndarray``
+    for cached NumPy arrays, or ``dict``/``list`` for JSON payloads.
+    Returns ``None`` on miss, expiry, corruption, or if caching is disabled.
+    A corrupt or unreadable cache file is treated as a cache miss (logged at
+    warning and deleted), never as a request failure.
     """
     cache_dir = _resolve_cache_dir()
     if cache_dir is None:
@@ -330,29 +340,70 @@ def _cache_get(dataset: str, payload: str, ttl_seconds: int = DEFAULT_TTL_SECOND
     payload = _envelope_unwrap(raw)
     if payload is None:
         # Corrupt or old format — treat as miss and delete.
-        logger.warning("Cache file %s is corrupt or old format; deleting.", path)
+        logger.warning(
+            "Cache file %s is corrupt or old format; deleting.", path
+        )
         try:
             path.unlink()
         except OSError:
             pass
         return None
 
-    return payload
+    typ = raw[4:5]
+    try:
+        if typ == _CACHE_TYPE_RAW:
+            return payload
+        elif typ == _CACHE_TYPE_NPY:
+            return np.load(io.BytesIO(payload), allow_pickle=False)
+        elif typ == _CACHE_TYPE_JSON:
+            return json.loads(payload.decode("utf-8"))
+    except Exception as exc:  # corrupt payload inside valid envelope
+        logger.warning(
+            "Cache file %s failed to deserialize (%s); deleting.", path, exc
+        )
+        try:
+            path.unlink()
+        except OSError:
+            pass
+    return None
 
 
-def _cache_set(dataset: str, payload: str, data: bytes) -> None:
-    """Store a raw binary payload in the cache atomically.
+def _cache_set(dataset: str, payload: str, data) -> None:
+    """Store a value in the cache atomically.
 
-    The payload is wrapped in a versioned envelope.  Write is atomic via a
-    temporary file + os.replace.  After writing, the size cap is enforced.
-    Cache write failures never propagate to the caller.
+    Accepts ``bytes`` (raw blob), ``np.ndarray`` (saved via np.save with
+    allow_pickle=False), or ``dict``/``list`` (serialized via JSON).
+    Write is atomic via a temporary file + os.replace.  After writing, the
+    size cap is enforced.  Cache write failures never propagate to the
+    caller.
     """
     cache_dir = _resolve_cache_dir()
     if cache_dir is None:
         return
 
     path = cache_dir / _cache_key(dataset, payload)
-    envelope = _envelope_wrap(_CACHE_TYPE_RAW, data)
+
+    try:
+        if isinstance(data, np.ndarray):
+            buf = io.BytesIO()
+            np.save(buf, data, allow_pickle=False)
+            payload_bytes = buf.getvalue()
+            typ = _CACHE_TYPE_NPY
+        elif isinstance(data, (dict, list)):
+            payload_bytes = json.dumps(data).encode("utf-8")
+            typ = _CACHE_TYPE_JSON
+        elif isinstance(data, (bytes, bytearray)):
+            payload_bytes = bytes(data)
+            typ = _CACHE_TYPE_RAW
+        else:
+            # Fallback: treat as raw bytes via bytes().
+            payload_bytes = bytes(data)
+            typ = _CACHE_TYPE_RAW
+
+        envelope = _envelope_wrap(typ, payload_bytes)
+    except Exception:
+        # Serialization failure must not fail the request.
+        return
 
     try:
         # Atomic write: temp file in same dir, then replace.
@@ -365,7 +416,7 @@ def _cache_set(dataset: str, payload: str, data: bytes) -> None:
         ) as tmp:
             tmp.write(envelope)
             tmp_path = tmp.name
-        # os.replace is atomic on POSIX and Windows (Python 3.3+).
+        # os.replace is atomic on POSIX and Windows.
         os.replace(tmp_path, path)
     except OSError:
         # Clean up temp file on failure.
@@ -374,14 +425,12 @@ def _cache_set(dataset: str, payload: str, data: bytes) -> None:
         except OSError:
             pass
         return
-
     # Enforce size cap (with lock to avoid concurrent scans).
     with _CACHE_LOCK:
         _enforce_size_cap(cache_dir)
 
 
 # ── Shared helpers ──────────────────────────────────────────────────────────
-
 # â”€â”€ Shared helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
@@ -1643,15 +1692,15 @@ def _fetch_era5_land_tp(year: int, month: int) -> np.ndarray:
             "ERA5-Land requires a Copernicus CDS API key (CDS_API_KEY or "
             "CDSAPI_KEY) which is not configured on this backend. "
             "Set the CDS_API_KEY environment variable, or choose a keyless "
-            "dataset. The DestinE PAT path is not supported for the ARCO Zarr "
-            "mirror — only CDS API key authentication is valid."
+            "dataset. Only CDS API key authentication is valid for the "
+            "ARCO Zarr mirror."
         )
 
     cache_key = f"era5_land_monthly_{year}_{month:02d}"
     cached = _cache_get("era5-land", cache_key)
     if cached is not None:
-        arr = np.load(io.BytesIO(cached), allow_pickle=False)
-        return arr
+        return cached
+
 
     try:
         import xarray as xr  # noqa: import out here to keep import light

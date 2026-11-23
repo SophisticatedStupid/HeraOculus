@@ -37,7 +37,6 @@ class CredentialSnapshot:
     firms_map_key: Optional[str] = None
     cds_api_key: Optional[str] = None
     cdsapi_key: Optional[str] = None
-    destine_pat: Optional[str] = None
 
 
 class AuthStore:
@@ -56,7 +55,6 @@ class AuthStore:
             firms_map_key=_env_optional("NASA_FIRMS_MAP_KEY"),
             cds_api_key=_env_optional("CDS_API_KEY"),
             cdsapi_key=_env_optional("CDSAPI_KEY"),
-            destine_pat=_env_optional("DESTINE_PAT"),
         )
 
     def get_firms_map_key(self) -> Optional[str]:
@@ -72,9 +70,6 @@ class AuthStore:
         """Return a CDS API key if configured (CDS_API_KEY or CDSAPI_KEY)."""
         return self._snapshot.cds_api_key or self._snapshot.cdsapi_key
 
-    def get_destine_pat(self) -> Optional[str]:
-        return self._snapshot.destine_pat
-
     def has_earthdata_auth(self) -> bool:
         token = self.get_earthdata_token()
         user, pw = self.get_earthdata_credentials()
@@ -86,7 +81,6 @@ class AuthStore:
         edl_pass = self._snapshot.earthdata_password
         firms_key = self._snapshot.firms_map_key
         cds_key = self.get_cds_credentials()
-        destine_pat = self.get_destine_pat()
 
         edl_source = (
             "environment"
@@ -99,7 +93,6 @@ class AuthStore:
             else "none"
         )
         cds_source = "environment" if cds_key else "none"
-        destine_source = "environment" if destine_pat else "none"
 
         return {
             "earthdata_configured": bool(edl_token or (edl_user and edl_pass)),
@@ -108,8 +101,6 @@ class AuthStore:
             "firms_source": firms_source,
             "cds_configured": bool(cds_key),
             "cds_source": cds_source,
-            "destine_configured": bool(destine_pat),
-            "destine_source": destine_source,
             "keyless_feeds_available": [
                 "NASA EONET v3 Wildfires & Events",
                 "NASA ASF SAR Granule Search",

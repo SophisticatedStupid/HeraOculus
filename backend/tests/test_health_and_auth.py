@@ -14,7 +14,6 @@ _HINT_FIELDS = (
     "earthdata_token_hint",
     "firms_key_hint",
     "cds_key_hint",
-    "destine_pat_hint",
 )
 
 
@@ -57,7 +56,6 @@ def test_auth_status_has_no_hint_fields(monkeypatch):
     monkeypatch.setenv("EARTHDATA_USERNAME", "edl_user_xyz789uvw")
     monkeypatch.setenv("NASA_FIRMS_MAP_KEY", "firms_key_qwerty123")
     monkeypatch.setenv("CDS_API_KEY", "cds_key_asdfgh")
-    monkeypatch.setenv("DESTINE_PAT", "destine_pat_zxcv999")
 
     # Reconstruct the store so it picks up the patched env, then swap it into
     # the router module so the endpoint uses it.
@@ -82,7 +80,6 @@ def test_auth_status_has_no_hint_fields(monkeypatch):
         "edl_user_xyz789uvw",
         "firms_key_qwerty123",
         "cds_key_asdfgh",
-        "destine_pat_zxcv999",
     )
     for secret in secrets:
         assert secret not in serialized, secret
@@ -93,4 +90,4 @@ def test_auth_status_has_no_hint_fields(monkeypatch):
     assert body["firms_configured"] is True
     assert body["firms_source"] == "environment"
     assert body["cds_configured"] is True
-    assert body["destine_configured"] is True
+    assert body["cds_source"] == "environment"

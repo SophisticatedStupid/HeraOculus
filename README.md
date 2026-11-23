@@ -65,7 +65,7 @@ Every data source carries a `provenanceType` that distinguishes live measurement
 
 | Provenance type | Sources | Live data? | Notes |
 |---|---|---|---|
-| `reanalysis_model` | NASA POWER (MERRA-2 / GLDAS / CERES), ERA5-Land | Yes (reanalysis) | Global gridded reanalysis, not station measurements. ERA5-Land requires a CDS API key / DestinE PAT; CDS access is queue-throttled. |
+| `reanalysis_model` | NASA POWER (MERRA-2 / GLDAS / CERES), ERA5-Land | Yes (reanalysis) | Global gridded reanalysis, not station measurements. ERA5-Land requires a CDS API key; CDS access is queue-throttled; prefer the ARCO Zarr mirror. |
 | `satellite_observation` | MODIS (NDVI/EVI), GIBS (map tiles), CMR (catalog), STAC (scene catalog + COG asset URLs), CHIRPS v3 (rainfall), GPM IMERG Final (rainfall), SMAP L4 (soil moisture), MODIS LST Night (temperature) | Yes (catalog/tiles; STAC assets are live COG URLs) | GIBS SST layer is `GHRSST_L4_MUR` map tiles; CMR and STAC are metadata/catalog — STAC exposes Cloud-Optimized GeoTIFF asset URLs for direct access. CHIRPS blends satellite estimates with in-situ gauge stations (not pure satellite); IMERG is satellite–gauge merged. SMAP root-zone soil moisture is a GEOS land-model estimate assimilating SMAP brightness temperatures (~7-day L4 latency), not a direct observation. MODIS LST Night is clear-sky only (~5-day latency). |
 | `in_situ_gauge` | USGS NWIS streamflow, NOAA CO-OPS tide gauges | Yes (gauge/station) | United States only |
 | `user_upload` | DEM, SAR, LULC GeoTIFF/NetCDF uploads | N/A (user-provided) | 35 MB limit per file |
@@ -249,8 +249,6 @@ npm run build         # tsc && vite build
 | `EARTHDATA_USERNAME` | *(unset)* | NASA Earthdata username (optional) |
 | `EARTHDATA_PASSWORD` | *(unset)* | NASA Earthdata password (optional) |
 | `CDS_API_KEY` | *(unset)* | Copernicus CDS API key for ERA5-Land (optional) |
-| `CDSAPI_KEY` | *(unset)* | Alternate Copernicus CDS API key name (optional) |
-| `DESTINE_PAT` | *(unset)* | DestinE Earth Data Hub PAT for ERA5-Land ARCO Zarr (optional) |
 | `VITE_BACKEND_URL` | `http://localhost:8000` | Frontend backend URL (Vite env, prefix `VITE_`) |
 | `HERAOCULUS_API_KEY` | *(unset)* | Server-only API key. When set, every /api/v1/* route except /health requires X-API-Key. Injected by the Vercel proxy; never embedded in the frontend bundle. |
 | `TRUST_PROXY_HEADERS` | `false` | Trust X-Forwarded-For for rate-limit keying when behind a trusted reverse proxy (e.g. Vercel). Set `true` only in production behind a proxy that overwrites X-Forwarded-For from the TCP connection. |
@@ -283,7 +281,7 @@ In local development the Vite dev proxy (`/api` → `http://127.0.0.1:8000`) is 
 - **SST** is not available via NASA POWER time series; only as GIBS map tiles.
 - **CHIRPS v3** covers 60°S–60°N (land); queries outside that band return an explicit unavailable result, never synthetic data.
 - **GPM IMERG Final** requires NASA Earthdata Login credentials on the backend; without them it returns an explicit unavailable result. V07 Final ran through 2025-09 (~3.5–4 month latency).
-- **ERA5-Land** requires a CDS API key or DestinE PAT on the backend; without them it returns an explicit unavailable result. CDS access is queue-throttled; prefer the ARCO Zarr mirror.
+- **ERA5-Land** requires a CDS API key on the backend; without it returns an explicit unavailable result. CDS access is queue-throttled; prefer the ARCO Zarr mirror.
 - **SMAP L4 (SPL4SMGP V008)** root-zone/surface soil moisture requires NASA Earthdata Login credentials on the backend; without them it returns an explicit unavailable result. Root-zone SM is a GEOS land-model estimate assimilating SMAP brightness temperatures (~7-day L4 latency), not a direct observation. Covers global land 85°S–85°N.
 - **MODIS LST Night (MOD11A1 V061)** requires NASA Earthdata Login credentials on the backend; without them it returns an explicit unavailable result. Stored as scaled integers (K = raw × 0.02, fill 0, valid range 7500–65535); clear-sky only, ~5-day latency. Covers global 90°S–90°N.
 - **CMR** is metadata/catalog search only; it produces no time series.
