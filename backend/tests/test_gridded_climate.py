@@ -14,6 +14,7 @@ Upstream is mocked — no live network. Covers:
 from __future__ import annotations
 
 import io
+from pathlib import Path
 from typing import Optional
 from unittest.mock import MagicMock, patch
 
@@ -72,6 +73,16 @@ _CHIRPS_TEST_ARRAY[1:399, 1:399] = 77.0
 _CHIRPS_TEST_BYTES = _make_geotiff_bytes(
     _CHIRPS_TEST_ARRAY, -10.0, -10.0, 10.0, 10.0
 )
+
+
+def test_requirements_do_not_include_invalid_httpio_package() -> None:
+    requirements = Path(__file__).resolve().parents[1] / "requirements.txt"
+    entries = [
+        line.strip().lower()
+        for line in requirements.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    assert not any(entry.startswith("httpio") for entry in entries)
 
 
 def _patch_download(monkeypatch: pytest.MonkeyPatch, data: bytes) -> None:

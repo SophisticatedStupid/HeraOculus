@@ -1720,7 +1720,7 @@ def _fetch_era5_land_tp(year: int, month: int) -> np.ndarray:
     except Exception as exc:
         raise GriddedUpstreamError(
             f"ERA5-Land ARCO Zarr read failed: {exc}. "
-            f"Install 'zarr' and 'fsspec'/'httpio' to read the ARCO mirror, "
+            f"Install 'zarr' and 'fsspec' to read the ARCO mirror, "
             f"or configure CDS_API_KEY."
         ) from exc
 
